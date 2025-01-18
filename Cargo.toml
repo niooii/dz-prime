@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.95"
+chrono = "0.4.39"
 dotenvy = "0.15.7"
 serenity = "0.12.4"
-sqlx = { version = "0.8.3", features = ["postgres"] }
+sqlx = { version = "0.8.3", features = ["runtime-tokio", "postgres"] }
 thiserror = "2.0.11"
 tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread"] }

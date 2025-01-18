@@ -1,6 +1,10 @@
-use std::convert::{TryFrom, TryInto};
+use std::{collections::HashSet, convert::{TryFrom, TryInto}};
+use std::iter::FromIterator;
+use anyhow::Result;
+use serenity::all::UserId;
+use sqlx::postgres::PgHasArrayType;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, Hash)]
 pub enum DayOfWeek {
     Sunday,     // 0
     Monday,     // 1
@@ -73,22 +77,80 @@ impl DayOfWeek {
     }
 }
 
-pub struct UserSettings {
+/// Database row structs
+#[derive(sqlx::FromRow)]
+pub struct UserSettingsRow {
+    pub user_id: String,
     pub should_dm: bool,
     pub ack_phrase: String
 }
 
 #[derive(sqlx::FromRow)]
-struct Task {
-    id: i32,
-    user_id: String,
-    title: String,
-    info: String,
-    remind_at: i32,
-    on_days: Vec<i32>, 
-    repeat_weekly: bool,
+pub struct TaskRow {
+    pub id: i64,
+    pub user_id: String,
+    pub title: String,
+    pub info: String,
+    pub remind_at: i32,
+    pub on_days: Vec<i32>, 
+    pub repeat_weekly: bool,
+}
+
+/// Returned structs
+#[derive(Debug)]
+
+pub struct UserSettings {
+    pub should_dm: bool,
+    pub ack_phrase: String
+}
+
+impl UserSettings {
+    pub fn from_row_struct(row: UserSettingsRow) -> Result<Self> {
+        Ok(
+            Self {
+                should_dm: row.should_dm,
+                ack_phrase: row.ack_phrase
+            }
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct Task {
+    pub id: i64,
+    pub user_id: UserId,
+    pub title: String,
+    pub info: String,
+    pub remind_at: i32,
+    pub on_days: HashSet<DayOfWeek>, 
+    pub repeat_weekly: bool,
 }
 
 impl Task {
-    
+    pub fn from_row_struct(row: TaskRow) -> Result<Self> {
+        Ok(
+            Self {
+                id: row.id,
+                user_id: UserId::new(row.user_id.parse::<u64>()?),
+                title: row.title,
+                info: row.info,
+                remind_at: row.remind_at,
+                on_days: {
+                    HashSet::from_iter(
+                        row.on_days.iter().map(|d| DayOfWeek::try_from(d.clone())
+                            .expect("Day of week input should be sanitized. Wtf??"))
+                    )
+                },
+                repeat_weekly: row.repeat_weekly
+            }
+        )
+    }
+}
+
+pub struct TaskCreateInfo {
+    pub title: String,
+    pub info: String,
+    pub remind_at: i32,
+    pub on_days: HashSet<DayOfWeek>, 
+    pub repeat_weekly: bool,
 }

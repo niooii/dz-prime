@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
+    id          BIGSERIAL PRIMARY KEY NOT NULL,
     user_id     TEXT NOT NULL,
     title       TEXT NOT NULL,
     info        TEXT NOT NULL,
@@ -12,5 +13,5 @@ CREATE TABLE IF NOT EXISTS tasks (
     remind_at   INT NOT NULL CHECK (remind_at >= 0 AND remind_at < 1440),
     -- where 0 = sunday, 1 = monday, etc.
     on_days         INTEGER[] NOT NULL,
-    repeat_weekly   BOOLEAN NOT NULL DEFAULT false,
+    repeat_weekly   BOOLEAN NOT NULL DEFAULT false
 );

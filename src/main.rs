@@ -1,35 +1,34 @@
 use std::env;
 mod model;
+mod bot;
 mod database;
-use serenity::async_trait;
-use serenity::model::channel::Message;
+mod time_parse;
+use bot::DZBot;
+use database::Database;
 use serenity::prelude::*;
+use anyhow::Result;
 
-struct Handler;
-
-#[async_trait]
-impl EventHandler for Handler {
-    async fn message(&self, ctx: Context, msg: Message) {
-        if msg.content == "!ping" {
-            if let Err(why) = msg.channel_id.say(&ctx.http, "Pong!").await {
-                println!("Error sending message: {why:?}");
-            }
-        }
-    }
-}
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     dotenvy::dotenv().expect("Expected a .env file");
-    let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+    let token = env::var("DISCORD_TOKEN").expect("Expected DISCORD_TOKEN in the environment");
     let intents = GatewayIntents::GUILD_MESSAGES
-        | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
+    | GatewayIntents::DIRECT_MESSAGES
+    | GatewayIntents::MESSAGE_CONTENT;
+    
+    let postgres_url = env::var("DATABASE_URL").expect("Expected DATABASE_URL in the environment");
+    let db = Database::new(&postgres_url).await?;
 
     let mut client =
-        Client::builder(&token, intents).event_handler(Handler).await.expect("Err creating client");
+    Client::builder(&token, intents).event_handler(
+        DZBot::new(db)
+    ).await.expect("Err creating client");
 
+    println!("Starting bot...");
     if let Err(why) = client.start().await {
         println!("Client error: {why:?}");
     }
+
+    Ok(())
 }

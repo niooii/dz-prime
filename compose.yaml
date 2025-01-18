@@ -1,0 +1,16 @@
+services:
+  db:
+    container_name: dz-prime-db
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: niooi
+      POSTGRES_PASSWORD: abcde
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:8432:5432"
+    volumes:
+      - dz-prime-data:/var/lib/postgresql/data
+
+volumes:
+  dz-prime-data: 
