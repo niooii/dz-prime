@@ -2,7 +2,7 @@ use std::{collections::HashSet, convert::{TryFrom, TryInto}};
 use std::iter::FromIterator;
 use anyhow::Result;
 use serenity::all::UserId;
-use sqlx::{postgres::PgHasArrayType, types::time::Date};
+use sqlx::{postgres::PgHasArrayType, types::time::{Date, OffsetDateTime}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, Hash)]
 pub enum DayOfWeek {
@@ -93,6 +93,7 @@ pub struct TaskRow {
     pub remind_at: i32,
     pub on_days: Option<Vec<i32>>, 
     pub repeat_weekly: bool,
+    pub time_created: OffsetDateTime,
     pub on_date: Option<Date>
 }
 
@@ -176,6 +177,7 @@ pub struct TaskCreateInfo {
 }
 
 /// Contains all the necessary information for sending reminders.
+#[derive(Clone)]
 pub struct TaskRemindInfo {
     pub title: String,
     pub info: String,

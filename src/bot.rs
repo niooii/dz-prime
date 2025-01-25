@@ -91,11 +91,13 @@ pub async fn spam_routine(
         // ping ping ping 
         let ping_msg = channel.send_message(http.clone(), ping.clone())
             .await.expect("Failed to send ping");
+        let _ = ping_msg.delete(http.clone()).await;
 
         tokio::time::sleep(Duration::from_secs_f32(0.66)).await;
     }
 
     to_controller.send(false).expect("Failed to send message to controller..");
+    println!("spam routine end..");
 }
 
 impl DZBot {
@@ -145,9 +147,9 @@ impl EventHandler for DZBot {
         // Check if user is tryna stop a mass pinging
         {
             let uid = msg.author.id;
-            let controllers = self.controllers.read().await;
+            let mut controllers = self.controllers.write().await;
             let tasks = controllers
-                .get(&uid);
+                .get_mut(&uid);
             let mut stopped_task = false;
             if let Some(tasks) = tasks {
                 // TODO! task and associated controller removal
@@ -155,6 +157,7 @@ impl EventHandler for DZBot {
                     if t.running() {
                         t.stop().await.expect("Failed to call stop");
                         stopped_task = true;
+                        println!("closed a shit");
                     }
                 }
             } 
