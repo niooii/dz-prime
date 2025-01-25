@@ -6,7 +6,7 @@ use crate::database::Database;
 use crate::model::{DayOfWeek, Task, TaskCreateInfo, TaskRemindInfo};
 use crate::scheduler::{ScheduledTaskController, TaskScheduler};
 use crate::time_parse::parse_time_string;
-use serenity::all::{ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mention, Ready, UserId};
+use serenity::all::{ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mention, MessageBuilder, ReactionType, Ready, UserId};
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
@@ -67,6 +67,17 @@ fn parse_text(content: &String) -> Result<TaskCreateInfo, String> {
     )
 }
 
+async fn report_err(channel: ChannelId, http: Arc<Http>, err: impl ToString + Into<String>) {
+    let res = channel.send_message(
+        http, 
+        CreateMessage::new().content(err)
+    ).await;
+
+    if let Err(e) = res {
+        eprintln!("Failed to log err to user: {e}");
+    }
+}
+
 pub async fn spam_routine(
     http: Arc<Http>, 
     task_info: TaskRemindInfo, 
@@ -80,7 +91,9 @@ pub async fn spam_routine(
         .description(task_info.info)
         .color(Colour::from_rgb(255, 255, 255));
     let ping = CreateMessage::new()
-        .content(format!("{} hey", task_info.user_id.mention().to_string()));
+        .content(format!("{} hey buddy", task_info.user_id.mention().to_string()));
+
+    // http.cache().unwrap().users().get(k)
     let mut channel = task_info.user_id.create_dm_channel(http.clone())
     .await;
 
@@ -97,6 +110,7 @@ pub async fn spam_routine(
     println!("Fetched channel.");
 
     // Signal routine start
+    // TODO! report_err
     to_controller.send(true).expect("Failed to send message to controller..");
 
     channel.send_message(http.clone(), CreateMessage::new().embed(embed))
@@ -175,20 +189,21 @@ impl EventHandler for DZBot {
         // Check if user is tryna stop a mass pinging
         {
             let uid = msg.author.id;
-            let mut controllers = self.controllers.write().await;
+            let controllers = self.controllers.read().await;
             let tasks = controllers
-                .get_mut(&uid);
+                .get(&uid);
             let mut stopped_task = false;
             if let Some(tasks) = tasks {
                 // TODO! task and associated controller removal
                 for t in tasks {
-                    if t.running() {
+                    if t.running().await {
                         t.stop().await.expect("Failed to call stop");
                         stopped_task = true;
                     }
                 }
             } 
             if stopped_task {
+                let _ = msg.react(ctx.http(), ReactionType::Unicode("👍".into())).await;
                 return;
             }
         }

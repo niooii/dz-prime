@@ -87,6 +87,7 @@ impl TaskScheduler {
         let (to_controller, from_scheduled) = watch::channel(false);
         let fc = Arc::new(Mutex::new(from_controller));
         let tc = Arc::new(to_controller);
+        let from_scheduled = Mutex::new(from_scheduled);
 
         println!("Adding task: {task:?}");
         
@@ -108,22 +109,24 @@ pub struct ScheduledTaskController {
     // to send a bool to the scheduled function and stop it
     to_scheduled: watch::Sender<bool>,
     // to recieve a bool from the scheduled function to know if it started running
-    from_scheduled: watch::Receiver<bool>,
+    from_scheduled: Mutex<watch::Receiver<bool>>,
     task_handle: JoinHandle<()>
 }
 
 impl ScheduledTaskController {
-    pub fn running(&self) -> bool {
-        *self.from_scheduled.borrow()
+    pub async fn running(&self) -> bool {
+        let fs = self.from_scheduled.lock().await;
+        let val = *fs.borrow();
+        val
     }
 
-    pub async fn stop(&mut self) -> Result<()> {
+    pub async fn stop(&self) -> Result<()> {
         // stop routine
         self.to_scheduled.send(true)?;
-        self.from_scheduled.mark_unchanged();
+        let mut fs = self.from_scheduled.lock().await;
         
         // wait for a false value to be sent
-        self.from_scheduled.changed().await?;
+        fs.changed().await?;
         // then reset
         self.to_scheduled.send(false)?;
         Ok(())
