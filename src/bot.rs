@@ -13,6 +13,7 @@ use serenity::prelude::*;
 use anyhow::Result;
 use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
+use tokio::time;
 
 const HELP_STR: &str = "
 FORMAT EXAMPLE:
@@ -69,17 +70,31 @@ fn parse_text(content: &String) -> Result<TaskCreateInfo, String> {
 pub async fn spam_routine(
     http: Arc<Http>, 
     task_info: TaskRemindInfo, 
-    from_controller: Arc<watch::Receiver<bool>>,
-    to_controller: Arc<watch::Sender<bool>>
+    from_controller: Arc<Mutex<watch::Receiver<bool>>>,
+    to_controller: Arc<watch::Sender<bool>>,
+    num_active: Arc<RwLock<u32>>
 ) {
+    println!("START SPAM ROUTINE..");
     let embed = CreateEmbed::new()
         .title(task_info.title)
         .description(task_info.info)
         .color(Colour::from_rgb(255, 255, 255));
     let ping = CreateMessage::new()
         .content(format!("{} hey", task_info.user_id.mention().to_string()));
-    let channel = task_info.user_id.create_dm_channel(http.clone())
-        .await.expect("Could not get dm channel");
+    let mut channel = task_info.user_id.create_dm_channel(http.clone())
+    .await;
+
+    while let Err(e) = channel {
+        eprintln!("Error fetching channel: {e}.");
+        let retry_time = 300;
+        eprintln!("Trying to refetch in {retry_time}ms..");
+        time::sleep(Duration::from_millis(retry_time)).await;
+        channel = task_info.user_id.create_dm_channel(http.clone())
+            .await;
+    }
+
+    let channel = channel.expect("tf??");
+    println!("Fetched channel.");
 
     // Signal routine start
     to_controller.send(true).expect("Failed to send message to controller..");
@@ -87,13 +102,26 @@ pub async fn spam_routine(
     channel.send_message(http.clone(), CreateMessage::new().embed(embed))
         .await.expect("failed to send initial embed gg");
 
-    while !*from_controller.borrow() {
+    loop {
         // ping ping ping 
-        let ping_msg = channel.send_message(http.clone(), ping.clone())
-            .await.expect("Failed to send ping");
-        let _ = ping_msg.delete(http.clone()).await;
+        let ghost_ping = || async {
+            let ping_msg = channel.send_message(http.clone(), ping.clone())
+                .await.expect("Failed to send ping");
+            let _ = ping_msg.delete(http.clone()).await;
+        };
+        ghost_ping().await;
 
-        tokio::time::sleep(Duration::from_secs_f32(0.66)).await;
+        // either sleep for 2/3 seconds or break when sent signal
+        let mut fc = from_controller.lock().await; 
+        let num_active: u32 = {
+            let lock = num_active.read().await;
+            *lock
+        };
+        tokio::select! {
+            // lets NOT get rate limited guys
+            _ = time::sleep(Duration::from_secs_f32(0.5 * num_active as f32)) => continue,
+            _ = fc.changed() => break
+        }
     }
 
     to_controller.send(false).expect("Failed to send message to controller..");
@@ -157,7 +185,6 @@ impl EventHandler for DZBot {
                     if t.running() {
                         t.stop().await.expect("Failed to call stop");
                         stopped_task = true;
-                        println!("closed a shit");
                     }
                 }
             } 

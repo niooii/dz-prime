@@ -1,18 +1,21 @@
 use serenity::all::Http;
-use tokio::{sync::{oneshot, watch}, task::JoinHandle};
+use tokio::{sync::{oneshot, watch, Mutex, RwLock}, task::JoinHandle};
 use chrono::{Duration, Local, Offset};
 use std::{sync::Arc, time::Duration as StdDuration};
 use anyhow::Result;
 
 use crate::{bot::spam_routine, model::{Task, TaskRemindInfo}};
 
-pub struct TaskScheduler;
+pub struct TaskScheduler {
+    num_active_spams: Arc<RwLock<u32>>
+}
 
 async fn job(
     http: Arc<Http>, 
-    from_controller: Arc<watch::Receiver<bool>>,
+    from_controller: Arc<Mutex<watch::Receiver<bool>>>,
     to_controller: Arc<watch::Sender<bool>>,
-    task: Task
+    task: Task,
+    num_active: Arc<RwLock<u32>>
 ) {
     let (task_info, remind_at) = match &task {
         Task::Recurring { user_id, title, info, remind_at, .. } => 
@@ -40,21 +43,35 @@ async fn job(
         .offset().fix().local_minus_utc() / 60;
 
     let minute = (remind_at - utc_offset) % 1440;
+
+    let inc = || async {
+        let mut lock = num_active.write().await;
+        *lock = *lock + 1;
+    };
+    let dec = || async {
+        let mut lock = num_active.write().await;
+        *lock = *lock - 1;
+    };
     // tokio::time::sleep_until()
     loop {
+        inc().await;
         spam_routine(
             http.clone(), 
             task_info.clone(), 
             from_controller.clone(), 
-            to_controller.clone()
+            to_controller.clone(),
+            num_active.clone()
         ).await;
+        dec().await;
+        // chekc if should be done or schedule new one
+        // TODO! this is for testing
         tokio::time::sleep(std::time::Duration::from_secs_f32(2.0)).await;
     }
 }
 
 impl TaskScheduler {
     pub async fn new() -> Result<Self> {
-        Ok(TaskScheduler)
+        Ok(TaskScheduler { num_active_spams: Arc::new(RwLock::new(0)) })
     }
 
     // Returns a channel.
@@ -68,13 +85,13 @@ impl TaskScheduler {
 
         let (to_scheduled, from_controller) = watch::channel(false);
         let (to_controller, from_scheduled) = watch::channel(false);
-        let fc = Arc::new(from_controller);
+        let fc = Arc::new(Mutex::new(from_controller));
         let tc = Arc::new(to_controller);
 
         println!("Adding task: {task:?}");
         
         let task_handle = tokio::task::spawn(
-            job(http, fc, tc, task)
+            job(http, fc, tc, task, self.num_active_spams.clone())
         );
         
         Ok(
