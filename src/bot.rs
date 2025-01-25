@@ -3,11 +3,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::database::Database;
+use crate::jobs::{EmbedReminderJob, SpamPingJob, SpamPingSignal, SpamPingStatus};
 use crate::model::{DayOfWeek, Task, TaskCreateInfo, TaskRemindInfo};
-use crate::scheduler::{ScheduledTaskController, TaskScheduler};
+use crate::scheduler::{TaskScheduler};
 use crate::time_parse::parse_time_string;
-use serenity::all::{ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mention, MessageBuilder, ReactionType, Ready, UserId};
-use serenity::async_trait;
+use serenity::all::{Channel, ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mention, MessageBuilder, ReactionType, Ready, UserId};
+use serenity::{async_trait, json::json};
 use serenity::model::channel::Message;
 use serenity::prelude::*;
 use anyhow::Result;
@@ -32,18 +33,65 @@ VALID TIME EXAMPLES:
 10pm mwf
 ";
 
+pub struct DzContextInner {
+    pub db: Arc<Database>,
+    pub spammer_ctl: HashMap<UserId, SpamPingJob>,
+    // map of the reminder task ID and user id in the database to the job
+    pub reminders_ctl: HashMap<i64, EmbedReminderJob>,
+}
+
+pub type DzContext = Arc<RwLock<DzContextInner>>;
+
 pub struct DZBot {
-    db: Database,
+    db: Arc<Database>,
     scheduler: TaskScheduler,
-    controllers: RwLock<HashMap<UserId, Vec<ScheduledTaskController>>>
+    ctx: DzContext
+}
+
+impl DzContextInner {
+    /// Attempts to retrieve a channel from the database, otherwise uses discord's api
+    pub async fn get_dm_channel(&self, http: Arc<Http>, uid: UserId) -> Result<ChannelId> {
+        let ch_fetch = self.db.dm_channel(&uid)
+            .await?;
+        Ok(
+            match ch_fetch {
+                None => {
+                    let mut channel = 
+                        uid.create_dm_channel(http.clone())
+                        .await;
+                    
+                    while let Err(e) = channel {
+                        eprintln!("Error fetching channel: {e}.");
+                        let retry_time = 300;
+                        eprintln!("Trying to refetch in {retry_time}ms..");
+                        time::sleep(Duration::from_millis(retry_time)).await;
+                        channel = uid.create_dm_channel(http.clone())
+                            .await;
+                    }
+                    
+                    let channel = channel.unwrap().id;
+                    self.db.put_dm_channel(&uid, &channel).await?;
+                    channel
+                }
+                Some(c) => c
+            }
+        )
+    }
 }
 
 impl DZBot {
-    pub async fn new(db: Database) -> Self {
+    pub async fn new(db: Arc<Database>) -> Self {
+        let ctx = Arc::new(RwLock::new(
+            DzContextInner {
+                db: db.clone(),
+                spammer_ctl: HashMap::new(),
+                reminders_ctl: HashMap::new()
+            }
+        ));
         Self {
+            scheduler: TaskScheduler::new(ctx.clone()).expect("Failed to run task scheduler"),
+            ctx,
             db,
-            scheduler: TaskScheduler::new().await.expect("Failed to run task scheduler"),
-            controllers: RwLock::new(HashMap::new())
         }
     }
 }
@@ -55,7 +103,6 @@ fn parse_text(content: &String) -> Result<TaskCreateInfo, String> {
     let (remind_at, on_days, repeat_weekly) = 
         parse_time_string(times_str).ok_or(String::from("bad time"))?;
     let info: String = lines.collect::<Vec<_>>().join("\n");
-
     Ok(
         TaskCreateInfo {
             title,
@@ -78,101 +125,18 @@ async fn report_err(channel: ChannelId, http: Arc<Http>, err: impl ToString + In
     }
 }
 
-pub async fn spam_routine(
-    http: Arc<Http>, 
-    task_info: TaskRemindInfo, 
-    from_controller: Arc<Mutex<watch::Receiver<bool>>>,
-    to_controller: Arc<watch::Sender<bool>>,
-    num_active: Arc<RwLock<u32>>
-) {
-    println!("START SPAM ROUTINE..");
-    let embed = CreateEmbed::new()
-        .title(task_info.title)
-        .description(task_info.info)
-        .color(Colour::from_rgb(255, 255, 255));
-    let ping = CreateMessage::new()
-        .content(format!("{} hey buddy", task_info.user_id.mention().to_string()));
-
-    // http.cache().unwrap().users().get(k)
-    let mut channel = task_info.user_id.create_dm_channel(http.clone())
-    .await;
-
-    while let Err(e) = channel {
-        eprintln!("Error fetching channel: {e}.");
-        let retry_time = 300;
-        eprintln!("Trying to refetch in {retry_time}ms..");
-        time::sleep(Duration::from_millis(retry_time)).await;
-        channel = task_info.user_id.create_dm_channel(http.clone())
-            .await;
-    }
-
-    let channel = channel.expect("tf??");
-    println!("Fetched channel.");
-
-    // Signal routine start
-    // TODO! report_err
-    to_controller.send(true).expect("Failed to send message to controller..");
-
-    channel.send_message(http.clone(), CreateMessage::new().embed(embed))
-        .await.expect("failed to send initial embed gg");
-
-    loop {
-        // ping ping ping 
-        let ghost_ping = || async {
-            let ping_msg = channel.send_message(http.clone(), ping.clone())
-                .await.expect("Failed to send ping");
-            let _ = ping_msg.delete(http.clone()).await;
-        };
-        ghost_ping().await;
-
-        // either sleep for 2/3 seconds or break when sent signal
-        let mut fc = from_controller.lock().await; 
-        let num_active: u32 = {
-            let lock = num_active.read().await;
-            *lock
-        };
-        tokio::select! {
-            // lets NOT get rate limited guys
-            _ = time::sleep(Duration::from_secs_f32(0.5 * num_active as f32)) => continue,
-            _ = fc.changed() => break
-        }
-    }
-
-    to_controller.send(false).expect("Failed to send message to controller..");
-    println!("spam routine end..");
-}
-
-impl DZBot {
-    async fn add_controller(&self, uid: UserId, c: ScheduledTaskController) {
-        let mut controllers = self.controllers.write().await;
-        let tasks = controllers.entry(uid)
-            .or_insert_with(Vec::new);
-        tasks.push(c);
-    }
-}
-
 #[async_trait]
 impl EventHandler for DZBot {
-    async fn ready(&self, ctx: Context, ready: Ready) {
+    async fn ready(&self, ctx: Context, _ready: Ready) {
         println!("bot started!");
 
         let tasks = self.db.all_tasks().await.expect("Could not get all tasks");
         println!("found {} tasks.. rescheduling all...", tasks.len());
 
-        let mut controllers = self.controllers.write().await;
         for task in tasks {
-            let uid = match task {
-                Task::Recurring { user_id, .. } => user_id,
-                Task::Once { user_id, .. } => user_id,
-            };
-            let v = controllers.entry(uid)
-            .or_insert_with(Vec::new);
-
-            v.push(
-                self.scheduler.add_task(ctx.http.clone(), task)
-                    .await.expect("Failed to add task")
-            );
+            self.scheduler.add_task(ctx.http.clone(), task).await.unwrap();
         }
+
         println!("finished rescheduling all tasks...");
     }
 
@@ -189,23 +153,17 @@ impl EventHandler for DZBot {
         // Check if user is tryna stop a mass pinging
         {
             let uid = msg.author.id;
-            let controllers = self.controllers.read().await;
-            let tasks = controllers
+            let dzctx = self.ctx.read().await;
+            let spam_job = dzctx.spammer_ctl
                 .get(&uid);
-            let mut stopped_task = false;
-            if let Some(tasks) = tasks {
-                // TODO! task and associated controller removal
-                for t in tasks {
-                    if t.running().await {
-                        t.stop().await.expect("Failed to call stop");
-                        stopped_task = true;
-                    }
+
+            if let Some(s) = spam_job {
+                if s.status() == SpamPingStatus::Active {
+                    s.signal(SpamPingSignal::Stop);
+                    let _ = msg.react(ctx.http(), ReactionType::Unicode("👍".into())).await;
+                    return;
                 }
             } 
-            if stopped_task {
-                let _ = msg.react(ctx.http(), ReactionType::Unicode("👍".into())).await;
-                return;
-            }
         }
 
         // Otherwise go on
@@ -230,7 +188,7 @@ impl EventHandler for DZBot {
         }
 
         // peak error management?
-        let task = match self.db.add_task(msg.author.id, &create_info).await {
+        let task = match self.db.add_task(&msg.author.id, &create_info).await {
             Ok(t) => t,
             Err(e) => {
                 msg.reply_ping(ctx, format!("Failed to save task to db: {e}")).await
@@ -245,11 +203,11 @@ impl EventHandler for DZBot {
                 return;
             }
             Ok(c) => {
-                self.add_controller(msg.author.id, c).await;
+                println!("success");
             }
         }
 
-        msg.reply_ping(ctx, "i gotchu").await
+        msg.reply_ping(ctx, "ok").await
             .expect("couldnt alert user of SUCCESS??");
     }
 }

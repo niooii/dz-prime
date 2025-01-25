@@ -1,7 +1,8 @@
-use std::env;
+use std::{env, sync::Arc};
 mod model;
 mod bot;
 mod scheduler;
+mod jobs;
 mod database;
 mod time_parse;
 use bot::DZBot;
@@ -23,7 +24,7 @@ async fn main() -> Result<()> {
 
     let mut client =
     Client::builder(&token, intents).event_handler(
-        DZBot::new(db).await
+        DZBot::new(Arc::new(db)).await
     ).await.expect("Err creating client");
 
     println!("Starting bot...");

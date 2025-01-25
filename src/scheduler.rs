@@ -4,131 +4,54 @@ use chrono::{Duration, Local, Offset};
 use std::{sync::Arc, time::Duration as StdDuration};
 use anyhow::Result;
 
-use crate::{bot::spam_routine, model::{Task, TaskRemindInfo}};
+use crate::{bot::DzContext, jobs::{EmbedReminderJob, SpamPingJob, SpamPingSignal}, model::{Task, TaskRemindInfo}};
 
 pub struct TaskScheduler {
-    num_active_spams: Arc<RwLock<u32>>
-}
-
-async fn job(
-    http: Arc<Http>, 
-    from_controller: Arc<Mutex<watch::Receiver<bool>>>,
-    to_controller: Arc<watch::Sender<bool>>,
-    task: Task,
-    num_active: Arc<RwLock<u32>>
-) {
-    let (task_info, remind_at) = match &task {
-        Task::Recurring { user_id, title, info, remind_at, .. } => 
-        (
-            TaskRemindInfo {
-                title: title.into(),
-                info: info.into(),
-                user_id: user_id.clone(),
-            },
-            remind_at
-        ),
-        Task::Once { user_id, title, info, remind_at, .. } => 
-        (
-            TaskRemindInfo {
-                title: title.into(),
-                info: info.into(),
-                user_id: user_id.clone(),
-            },
-            remind_at
-        ),
-    };
-    // calculate wait time
-    // account for UTC offset arrhghghhg
-    let utc_offset = chrono::Local::now()
-        .offset().fix().local_minus_utc() / 60;
-
-    let minute = (remind_at - utc_offset) % 1440;
-
-    let inc = || async {
-        let mut lock = num_active.write().await;
-        *lock = *lock + 1;
-    };
-    let dec = || async {
-        let mut lock = num_active.write().await;
-        *lock = *lock - 1;
-    };
-    // tokio::time::sleep_until()
-    loop {
-        inc().await;
-        spam_routine(
-            http.clone(), 
-            task_info.clone(), 
-            from_controller.clone(), 
-            to_controller.clone(),
-            num_active.clone()
-        ).await;
-        dec().await;
-        // chekc if should be done or schedule new one
-        // TODO! this is for testing
-        tokio::time::sleep(std::time::Duration::from_secs_f32(2.0)).await;
-    }
+    ctx: DzContext
 }
 
 impl TaskScheduler {
-    pub async fn new() -> Result<Self> {
-        Ok(TaskScheduler { num_active_spams: Arc::new(RwLock::new(0)) })
+    pub fn new(ctx: DzContext) -> Result<Self> {
+        Ok(TaskScheduler { ctx })
     }
 
     // Returns a channel.
     // Upon sending any value to this channel, if active, the spam routine will stop.
-    pub async fn add_task(&self, http: Arc<Http>, task: Task) -> Result<ScheduledTaskController> {
+    pub async fn add_task(&self, http: Arc<Http>, task: Task) -> Result<()> {
         
         // let days_str = task.on_days.clone().into_iter().map(|d| i32::from(d).to_string())
         //     .collect::<Vec<String>>().join(",");
         // println!("day str: {}", days_str);
         // let cron = format!("0 {} {} * * {}", minute % 60, minute / 60, days_str);
 
-        let (to_scheduled, from_controller) = watch::channel(false);
-        let (to_controller, from_scheduled) = watch::channel(false);
-        let fc = Arc::new(Mutex::new(from_controller));
-        let tc = Arc::new(to_controller);
-        let from_scheduled = Mutex::new(from_scheduled);
+        // let (to_task, from_ctl) = watch::channel(false);
+        // let (to_ctl, from_task) = watch::channel(false);
 
         println!("Adding task: {task:?}");
-        
-        let task_handle = tokio::task::spawn(
-            job(http, fc, tc, task, self.num_active_spams.clone())
-        );
-        
-        Ok(
-            ScheduledTaskController {
-                to_scheduled,
-                from_scheduled,
-                task_handle
-            }
-        )
-    }
-}
+        let (task_id, uid) = match task {
+            Task::Recurring { id, user_id, .. } => (id, user_id),
+            Task::Once { id, user_id, .. } => (id, user_id),
+        };
 
-pub struct ScheduledTaskController {
-    // to send a bool to the scheduled function and stop it
-    to_scheduled: watch::Sender<bool>,
-    // to recieve a bool from the scheduled function to know if it started running
-    from_scheduled: Mutex<watch::Receiver<bool>>,
-    task_handle: JoinHandle<()>
-}
+        let mut ctx = self.ctx.write().await;
 
-impl ScheduledTaskController {
-    pub async fn running(&self) -> bool {
-        let fs = self.from_scheduled.lock().await;
-        let val = *fs.borrow();
-        val
-    }
+        // insert a spammer controller if there isnt one
+        ctx.spammer_ctl.entry(uid)
+            .or_insert_with(|| {
+                SpamPingJob::new(
+                    self.ctx.clone(), 
+                    http.clone(),
+                    uid
+                ).unwrap()
+            });
 
-    pub async fn stop(&self) -> Result<()> {
-        // stop routine
-        self.to_scheduled.send(true)?;
-        let mut fs = self.from_scheduled.lock().await;
+        ctx.reminders_ctl
+            .insert(
+                task_id, 
+                EmbedReminderJob::new(self.ctx.clone(), http, task)?
+            );
         
-        // wait for a false value to be sent
-        fs.changed().await?;
-        // then reset
-        self.to_scheduled.send(false)?;
         Ok(())
     }
 }
+
