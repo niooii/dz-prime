@@ -222,15 +222,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clokwerk"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd108d365fcb6d7eddf17a6718eb6a33db18ba4178f8cc6b667f480710f10d76"
-dependencies = [
- "chrono",
-]
-
-[[package]]
 name = "command_attr"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -303,15 +294,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a97769d94ddab943e4510d138150169a2758b5ef3eb191a9ee688de3e23ef7b3"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "croner"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38fd53511eaf0b00a185613875fee58b208dfce016577d0ad4bb548e1c4fb3ee"
-dependencies = [
- "chrono",
 ]
 
 [[package]]
@@ -424,13 +406,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "clokwerk",
  "dotenvy",
  "serenity",
  "sqlx",
  "thiserror 2.0.11",
  "tokio",
- "tokio-cron-scheduler",
 ]
 
 [[package]]
@@ -1204,17 +1184,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
 
 [[package]]
-name = "num-derive"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.96",
-]
-
-[[package]]
 name = "num-integer"
 version = "0.1.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1871,6 +1840,7 @@ dependencies = [
  "sha2",
  "smallvec",
  "thiserror 2.0.11",
+ "time",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -1954,6 +1924,7 @@ dependencies = [
  "sqlx-core",
  "stringprep",
  "thiserror 2.0.11",
+ "time",
  "tracing",
  "whoami",
 ]
@@ -1991,6 +1962,7 @@ dependencies = [
  "sqlx-core",
  "stringprep",
  "thiserror 2.0.11",
+ "time",
  "tracing",
  "whoami",
 ]
@@ -2014,6 +1986,7 @@ dependencies = [
  "serde",
  "serde_urlencoded",
  "sqlx-core",
+ "time",
  "tracing",
  "url",
 ]
@@ -2237,21 +2210,6 @@ dependencies = [
  "socket2",
  "tokio-macros",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "tokio-cron-scheduler"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a5597b569b4712cf78aa0c9ae29742461b7bda1e49c2a5fdad1d79bf022f8f0"
-dependencies = [
- "chrono",
- "croner",
- "num-derive",
- "num-traits",
- "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -2506,15 +2464,6 @@ name = "utf8_iter"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
-
-[[package]]
-name = "uuid"
-version = "1.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "744018581f9a3454a9e15beb8a33b017183f1e7c0cd170232a2d1453b23a51c4"
-dependencies = [
- "getrandom",
-]
 
 [[package]]
 name = "uwl"

@@ -2,7 +2,7 @@ use std::{collections::HashSet, convert::{TryFrom, TryInto}};
 use std::iter::FromIterator;
 use anyhow::Result;
 use serenity::all::UserId;
-use sqlx::postgres::PgHasArrayType;
+use sqlx::{postgres::PgHasArrayType, types::time::Date};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, Hash)]
 pub enum DayOfWeek {
@@ -81,7 +81,6 @@ impl DayOfWeek {
 #[derive(sqlx::FromRow)]
 pub struct UserSettingsRow {
     pub user_id: String,
-    pub should_dm: bool,
     pub ack_phrase: String
 }
 
@@ -92,15 +91,15 @@ pub struct TaskRow {
     pub title: String,
     pub info: String,
     pub remind_at: i32,
-    pub on_days: Vec<i32>, 
+    pub on_days: Option<Vec<i32>>, 
     pub repeat_weekly: bool,
+    pub on_date: Option<Date>
 }
 
 /// Returned structs
 #[derive(Debug)]
 
 pub struct UserSettings {
-    pub should_dm: bool,
     pub ack_phrase: String
 }
 
@@ -108,7 +107,6 @@ impl UserSettings {
     pub fn from_row_struct(row: UserSettingsRow) -> Result<Self> {
         Ok(
             Self {
-                should_dm: row.should_dm,
                 ack_phrase: row.ack_phrase
             }
         )
@@ -116,32 +114,54 @@ impl UserSettings {
 }
 
 #[derive(Debug)]
-pub struct Task {
-    pub id: i64,
-    pub user_id: UserId,
-    pub title: String,
-    pub info: String,
-    pub remind_at: i32,
-    pub on_days: HashSet<DayOfWeek>, 
-    pub repeat_weekly: bool,
+pub enum Task {
+    Recurring {
+        id: i64,
+        user_id: UserId,
+        title: String,
+        info: String,
+        remind_at: i32,
+        on_days: HashSet<DayOfWeek>, 
+        repeat_weekly: bool,
+    },
+    Once {
+        id: i64,
+        user_id: UserId,
+        title: String,
+        info: String,
+        remind_at: i32,
+        date: Date
+    }
 }
 
 impl Task {
     pub fn from_row_struct(row: TaskRow) -> Result<Self> {
         Ok(
-            Self {
-                id: row.id,
-                user_id: UserId::new(row.user_id.parse::<u64>()?),
-                title: row.title,
-                info: row.info,
-                remind_at: row.remind_at,
-                on_days: {
-                    HashSet::from_iter(
-                        row.on_days.iter().map(|d| DayOfWeek::try_from(d.clone())
-                            .expect("Day of week input should be sanitized. Wtf??"))
-                    )
-                },
-                repeat_weekly: row.repeat_weekly
+            if let Some(date) = row.on_date {
+                Self::Once {
+                    id: row.id,
+                    user_id: UserId::new(row.user_id.parse::<u64>()?),
+                    title: row.title,
+                    info: row.info,
+                    remind_at: row.remind_at,
+                    date
+                }
+            } else {
+                Self::Recurring {
+                    id: row.id,
+                    user_id: UserId::new(row.user_id.parse::<u64>()?),
+                    title: row.title,
+                    info: row.info,
+                    remind_at: row.remind_at,
+                    // row.on_days should never be None bc input validation!
+                    on_days: {
+                        HashSet::from_iter(
+                            row.on_days.unwrap().iter().map(|d| DayOfWeek::try_from(d.clone())
+                                .expect("Day of week input should be sanitized. Wtf??"))
+                        )
+                    },
+                    repeat_weekly: row.repeat_weekly
+                }
             }
         )
     }
@@ -153,4 +173,11 @@ pub struct TaskCreateInfo {
     pub remind_at: i32,
     pub on_days: HashSet<DayOfWeek>, 
     pub repeat_weekly: bool,
+}
+
+/// Contains all the necessary information for sending reminders.
+pub struct TaskRemindInfo {
+    pub title: String,
+    pub info: String,
+    pub user_id: UserId
 }

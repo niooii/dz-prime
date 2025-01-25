@@ -31,14 +31,12 @@ impl Database {
 
     pub async fn set_settings(&self, user_id: UserId, user_settings: UserSettings) -> Result<()> {
         query!(
-            r"INSERT INTO settings (user_id, should_dm, ack_phrase)
-            VALUES ($1, $2, $3)
+            r"INSERT INTO settings (user_id, ack_phrase)
+            VALUES ($1, $2)
             ON CONFLICT (user_id)
             DO UPDATE SET
-            should_dm = EXCLUDED.should_dm,
             ack_phrase = EXCLUDED.ack_phrase;",
             user_id.to_string(),
-            user_settings.should_dm,
             user_settings.ack_phrase
         ).execute(&self.pool).await?;
         Ok(())

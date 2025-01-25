@@ -1,12 +1,12 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::database::Database;
-use crate::model::{DayOfWeek, Task, TaskCreateInfo};
-use crate::scheduler::TaskScheduler;
+use crate::model::{DayOfWeek, Task, TaskCreateInfo, TaskRemindInfo};
+use crate::scheduler::{ScheduledTaskController, TaskScheduler};
 use crate::time_parse::parse_time_string;
-use serenity::all::{ChannelId, Ready, UserId};
+use serenity::all::{ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mention, Ready, UserId};
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
@@ -25,7 +25,7 @@ TIME is:
 [time days repeatweekly]
 VALID TIME EXAMPLES:
 9am UMTWRFS rep
-9am all rep
+9am a rep (a = ALL)
 9:30am UMTWRFS
 9:30am umtwrfs rep
 10pm mwf
@@ -33,19 +33,16 @@ VALID TIME EXAMPLES:
 
 pub struct DZBot {
     db: Database,
-    allowed_channels: Vec<ChannelId>,
-    scheduler: TaskScheduler
+    scheduler: TaskScheduler,
+    controllers: RwLock<HashMap<UserId, Vec<ScheduledTaskController>>>
 }
 
 impl DZBot {
     pub async fn new(db: Database) -> Self {
         Self {
             db,
-            // TODO! kill with fire
-            allowed_channels: vec![
-                ChannelId::new(1329597532317417583)
-            ],
-            scheduler: TaskScheduler::new().await.expect("Failed to run task scheduler")
+            scheduler: TaskScheduler::new().await.expect("Failed to run task scheduler"),
+            controllers: RwLock::new(HashMap::new())
         }
     }
 }
@@ -69,19 +66,44 @@ fn parse_text(content: &String) -> Result<TaskCreateInfo, String> {
     )
 }
 
-pub async fn spam_routine(rx: Arc<watch::Receiver<bool>>) {
-    while !*rx.borrow() {
+pub async fn spam_routine(
+    http: Arc<Http>, 
+    task_info: TaskRemindInfo, 
+    from_controller: Arc<watch::Receiver<bool>>,
+    to_controller: Arc<watch::Sender<bool>>
+) {
+    let embed = CreateEmbed::new()
+        .title(task_info.title)
+        .description(task_info.info)
+        .color(Colour::from_rgb(255, 255, 255));
+    let ping = CreateMessage::new()
+        .content(format!("{} hey", task_info.user_id.mention().to_string()));
+    let channel = task_info.user_id.create_dm_channel(http.clone())
+        .await.expect("Could not get dm channel");
 
+    // Signal routine start
+    to_controller.send(true).expect("Failed to send message to controller..");
+
+    channel.send_message(http.clone(), CreateMessage::new().embed(embed))
+        .await.expect("failed to send initial embed gg");
+
+    while !*from_controller.borrow() {
         // ping ping ping 
+        let ping_msg = channel.send_message(http.clone(), ping.clone())
+            .await.expect("Failed to send ping");
 
-        tokio::select! {
-            _ = rx.changed() => {
-                if *rx.borrow() {
-                    break;
-                }
-            }
-            _ = tokio::time::sleep(Duration::from_secs_f32(0.66)) => {}
-        }
+        tokio::time::sleep(Duration::from_secs_f32(0.66)).await;
+    }
+
+    to_controller.send(false).expect("Failed to send message to controller..");
+}
+
+impl DZBot {
+    async fn add_controller(&self, uid: UserId, c: ScheduledTaskController) {
+        let mut controllers = self.controllers.write().await;
+        let tasks = controllers.entry(uid)
+            .or_insert_with(Vec::new);
+        tasks.push(c);
     }
 }
 
@@ -92,9 +114,20 @@ impl EventHandler for DZBot {
 
         let tasks = self.db.all_tasks().await.expect("Could not get all tasks");
         println!("found {} tasks.. rescheduling all...", tasks.len());
-        
+
+        let mut controllers = self.controllers.write().await;
         for task in tasks {
-            self.scheduler.add_task(ctx.http.clone(), task).await.expect("Failed to add task");
+            let uid = match task {
+                Task::Recurring { user_id, .. } => user_id,
+                Task::Once { user_id, .. } => user_id,
+            };
+            let v = controllers.entry(uid)
+            .or_insert_with(Vec::new);
+
+            v.push(
+                self.scheduler.add_task(ctx.http.clone(), task)
+                    .await.expect("Failed to add task")
+            );
         }
         println!("finished rescheduling all tasks...");
     }
@@ -105,13 +138,38 @@ impl EventHandler for DZBot {
         }
         
         // If messaged in a guild, check if the channel id is the one specified 
-        if msg.guild_id.is_some() && !self.allowed_channels.contains(&msg.channel_id) {
+        if msg.guild_id.is_some() {
             return;
         }
+        
+        // Check if user is tryna stop a mass pinging
+        {
+            let uid = msg.author.id;
+            let controllers = self.controllers.read().await;
+            let tasks = controllers
+                .get(&uid);
+            let mut stopped_task = false;
+            if let Some(tasks) = tasks {
+                // TODO! task and associated controller removal
+                for t in tasks {
+                    if t.running() {
+                        t.stop().await.expect("Failed to call stop");
+                        stopped_task = true;
+                    }
+                }
+            } 
+            if stopped_task {
+                return;
+            }
+        }
 
+        // Otherwise go on
         let create_info = match parse_text(&msg.content) {
             Ok(r) => r,
             Err(err_string) => {
+                // might be:
+                // HELP, TASKS, DELETE
+                // TODO!
                 let needs_a_hero = msg.content.to_lowercase().contains("help");
                 if let Err(e) = msg.reply_ping(ctx, if needs_a_hero {HELP_STR} else {&err_string}).await {
                     eprintln!("{e}");
@@ -120,19 +178,30 @@ impl EventHandler for DZBot {
             }
         };
 
+        if create_info.on_days.len() == 0 {
+            msg.reply_ping(ctx, String::from("enter some days man")).await
+                .expect("couldnt alert user of failure");
+            return;
+        }
+
         // peak error management?
         let task = match self.db.add_task(msg.author.id, &create_info).await {
             Ok(t) => t,
             Err(e) => {
                 msg.reply_ping(ctx, format!("Failed to save task to db: {e}")).await
-                .expect("couldnt alert user of failure");
+                    .expect("couldnt alert user of failure");
                 return;
             }
         };
-        if let Err(e) = self.scheduler.add_task(ctx.http.clone(), task).await {
-            msg.reply_ping(ctx, format!("Failed to schedule task: {e}")).await
-                .expect("couldnt alert user of failure");
-            return;
+        match self.scheduler.add_task(ctx.http.clone(), task).await {
+            Err(e) => {
+                msg.reply_ping(ctx, format!("Failed to schedule task: {e}")).await
+                    .expect("couldnt alert user of failure");
+                return;
+            }
+            Ok(c) => {
+                self.add_controller(msg.author.id, c).await;
+            }
         }
 
         msg.reply_ping(ctx, "i gotchu").await

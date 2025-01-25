@@ -21,7 +21,7 @@ fn parse_on_days(token: &String) -> Option<HashSet<DayOfWeek>> {
     }
     let upper = token.to_uppercase();
 
-    if upper.contains("ALL") {
+    if upper.contains("A") {
         return Some(HashSet::from(DayOfWeek::all()));
     }
     

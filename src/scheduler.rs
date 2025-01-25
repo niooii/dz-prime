@@ -5,7 +5,7 @@ use chrono::{Duration, Local, Offset};
 use std::{sync::Arc, time::Duration as StdDuration};
 use anyhow::Result;
 
-use crate::{bot::spam_routine, model::Task};
+use crate::{bot::spam_routine, model::{Task, TaskRemindInfo}};
 
 pub struct TaskScheduler {
     scheduler: Arc<JobScheduler>
@@ -25,7 +25,7 @@ impl TaskScheduler {
 
     // Returns a channel.
     // Upon sending any value to this channel, if active, the spam routine will stop.
-    pub async fn add_task(&self, http: Arc<Http>, task: Task) -> Result<watch::Sender<bool>> {
+    pub async fn add_task(&self, http: Arc<Http>, task: Task) -> Result<ScheduledTaskController> {
         // account for UTC offset arrhghghhg
         let utc_offset = chrono::Local::now()
             .offset().fix().local_minus_utc() / 60;
@@ -37,17 +37,58 @@ impl TaskScheduler {
         println!("day str: {}", days_str);
         let cron = format!("0 {} {} * * {}", minute % 60, minute / 60, days_str);
 
-        let (tx, rx) = watch::channel(false);
-        let rx = Arc::new(rx);
-        let job = Job::new_async(&cron, move |_uuid, _lock| {
-            let rx = rx.clone();
+        let (to_scheduled, from_controller) = watch::channel(false);
+        let (to_controller, from_scheduled) = watch::channel(false);
+        let fc = Arc::new(from_controller);
+        let tc = Arc::new(to_controller);
+        let job = Job::new_async(&cron, 
+            move |_uuid, _lock| {
+            let fc = fc.clone();
+            let tc = tc.clone();
+            let http = http.clone();
+            let task_info = TaskRemindInfo {
+                title: task.title.clone(),
+                info: task.info.clone(),
+                user_id: task.user_id.clone()
+            };
             Box::pin(async move {
-                spam_routine(rx).await;
+                spam_routine(http, task_info, fc, tc).await;
             })
         })?;
         
         self.scheduler.add(job).await?;
         
-        Ok(tx)
+        Ok(
+            ScheduledTaskController {
+                to_scheduled,
+                from_scheduled
+            }
+        )
+    }
+}
+
+pub struct ScheduledTaskController {
+    // to send a bool to the scheduled function and stop it
+    to_scheduled: watch::Sender<bool>,
+    // to recieve a bool from the scheduled function to know if it started running
+    from_scheduled: watch::Receiver<bool>
+}
+
+impl ScheduledTaskController {
+    pub fn running(&self) -> bool {
+        *self.from_scheduled.borrow()
+    }
+
+    pub async fn stop(&self) -> Result<()> {
+        // stop routine
+        self.to_scheduled.send(true)?;
+        
+        // wait for a false value to be sent
+        while *self.from_scheduled.borrow() {
+            tokio::time::sleep(std::time::Duration::from_secs_f32(0.1)).await;
+        }
+        // then reset
+        self.to_scheduled.send(false)?;
+        Ok(())
     }
 }
