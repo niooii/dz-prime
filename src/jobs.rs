@@ -2,7 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use chrono::Offset;
 use serenity::all::{ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mentionable, UserId};
-use tokio::{sync::{watch, Mutex}, time};
+use ::time::OffsetDateTime;
+use tokio::{sync::{watch, Mutex}, time::{self, Instant, Sleep}};
 use anyhow::Result;
 
 use crate::{bot::DzContext, database::Database, model::{Task, TaskRemindInfo}};
@@ -130,6 +131,12 @@ impl EmbedReminderJob {
             from_task: Mutex::new(from_task)
         })
     }
+
+    /// Immediately stops the scheduled reminder task
+    pub fn kill(&self) -> Result<()> {
+        self.to_task.send(true)
+            .map_err(anyhow::Error::from)
+    }
 }
 
 async fn embed_reminder_job(
@@ -138,36 +145,58 @@ async fn embed_reminder_job(
     task: Task,
     mut from_ctl: watch::Receiver<bool>,
 ) {
-    let (task_info, remind_at) = match &task {
-        Task::Recurring { user_id, title, info, remind_at, .. } => 
+    let (task_info, id) = match &task {
+        Task::Recurring { id, user_id, title, info, remind_at, .. } => 
         (
             TaskRemindInfo {
                 title: title.into(),
                 info: info.into(),
                 user_id: user_id.clone(),
             },
-            remind_at
+            *id
         ),
-        Task::Once { user_id, title, info, remind_at, .. } => 
+        Task::Once { id, user_id, title, info, remind_at, .. } => 
         (
             TaskRemindInfo {
                 title: title.into(),
                 info: info.into(),
                 user_id: user_id.clone(),
             },
-            remind_at
+            *id
         ),
     };
-    // calculate wait time
-    // account for UTC offset arrhghghhg
-    let utc_offset = chrono::Local::now()
-        .offset().fix().local_minus_utc() / 60;
-
-    let minute = (remind_at - utc_offset) % 1440;
 
     let db = ctx.read().await.db.clone();
+    let remove_from_map = || async {
+        ctx.write().await.reminders_ctl.remove_entry(&id);
+    };
+
     loop {
-        // tokio::time::sleep_until()
+        // TODO! this is for testing
+
+        
+        match sleep_until_next(&task) {
+            Some(sleep) => {
+                tokio::select! {
+                    _ = sleep => {
+
+                    },
+                    _ = from_ctl.changed() => {
+                        // this means a cancel signal has been sent.
+                        remove_from_map().await;
+                        return;
+                    }
+                };
+            },
+            None => {
+                // theres no more times to repeat this task
+                // remove remind task
+                remove_from_map().await;
+                // kill this thread
+                return;
+            }
+        }
+
         send_embed(
             http.clone(), 
             db.clone(), 
@@ -182,12 +211,33 @@ async fn embed_reminder_job(
         }
 
         // chekc if should be done or schedule new one
-        // TODO! this is for testing
-        tokio::time::sleep(std::time::Duration::from_secs_f32(15.0)).await;
     }
 }
 
-pub async fn send_embed(
+fn next_occurrence_time(task: &Task) -> Option<OffsetDateTime> {
+    // TODO!
+    Some(OffsetDateTime::now_utc() + Duration::from_secs(5))
+}
+
+/// Returns None if there is no next occurrence
+fn sleep_until_next(task: &Task) -> Option<Sleep> {
+    let next = next_occurrence_time(task)?;
+    let instant = Instant::now();
+    let now = OffsetDateTime::now_utc();
+    if next < now {
+        panic!("You're cooked. ff ");
+    }
+
+    let dur = next - now;
+    let dur = std::time::Duration::new(
+        dur.whole_seconds() as u64,
+        dur.subsec_nanoseconds() as u32
+    );
+
+    Some(time::sleep_until(instant + dur))
+}
+
+async fn send_embed(
     http: Arc<Http>,
     db: Arc<Database>,
     ctx: DzContext, 

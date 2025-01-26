@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use serenity::all::{ChannelId, UserId};
-use sqlx::{postgres::PgPool, query, query_as, query_scalar};
+use sqlx::{postgres::{PgConnectOptions, PgPool, PgPoolOptions}, query, query_as, query_scalar};
 use anyhow::Result;
 
 use crate::model::{DayOfWeek, Task, TaskCreateInfo, TaskRow, UserSettings, UserSettingsRow};
@@ -11,9 +11,28 @@ pub struct Database {
 }
 
 impl Database {
-    pub async fn new(postgres_url: &str) -> Result<Self> {
+    pub async fn new(
+        host: &str, 
+        user: &str, 
+        pass: &str, 
+        db: &str, 
+        port: u16
+    ) -> Result<Self> {
         Ok (Self {
-            pool: PgPool::connect(postgres_url).await?
+            pool: {
+                let options = PgConnectOptions::new()
+                    .host(host)
+                    .port(port)
+                    .database(db)
+                    .username(user)
+                    .password(pass)
+                    .options([("timezone", "UTC")]);
+
+                PgPoolOptions::new()
+                    .max_connections(5)
+                    .connect_with(options)
+                    .await?
+            }
         })
     }
 

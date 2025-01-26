@@ -1,6 +1,7 @@
 use std::{collections::HashSet, convert::{TryFrom, TryInto}};
 use std::iter::FromIterator;
 use anyhow::Result;
+use chrono::Offset;
 use serenity::all::UserId;
 use sqlx::{postgres::PgHasArrayType, types::time::{Date, OffsetDateTime}};
 
@@ -124,6 +125,7 @@ pub enum Task {
         remind_at: i32,
         on_days: HashSet<DayOfWeek>, 
         repeat_weekly: bool,
+        created_at: OffsetDateTime
     },
     Once {
         id: i64,
@@ -131,7 +133,8 @@ pub enum Task {
         title: String,
         info: String,
         remind_at: i32,
-        date: Date
+        date: Date,
+        created_at: OffsetDateTime
     }
 }
 
@@ -145,7 +148,8 @@ impl Task {
                     title: row.title,
                     info: row.info,
                     remind_at: row.remind_at,
-                    date
+                    date,
+                    created_at: row.time_created
                 }
             } else {
                 Self::Recurring {
@@ -161,7 +165,8 @@ impl Task {
                                 .expect("Day of week input should be sanitized. Wtf??"))
                         )
                     },
-                    repeat_weekly: row.repeat_weekly
+                    repeat_weekly: row.repeat_weekly,
+                    created_at: row.time_created
                 }
             }
         )

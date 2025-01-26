@@ -6,7 +6,7 @@ use crate::database::Database;
 use crate::jobs::{EmbedReminderJob, SpamPingJob, SpamPingSignal, SpamPingStatus};
 use crate::model::{DayOfWeek, Task, TaskCreateInfo, TaskRemindInfo};
 use crate::scheduler::{TaskScheduler};
-use crate::time_parse::parse_time_string;
+use crate::time::parse_time_string;
 use serenity::all::{Channel, ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mention, MessageBuilder, ReactionType, Ready, UserId};
 use serenity::{async_trait, json::json};
 use serenity::model::channel::Message;
@@ -35,8 +35,10 @@ VALID TIME EXAMPLES:
 
 pub struct DzContextInner {
     pub db: Arc<Database>,
+    /// sometime clean it up or remove it when the last reminder job is gone
+    /// maybe..
     pub spammer_ctl: HashMap<UserId, SpamPingJob>,
-    // map of the reminder task ID and user id in the database to the job
+    /// map of the reminder task ID in the database to the job
     pub reminders_ctl: HashMap<i64, EmbedReminderJob>,
 }
 
@@ -76,6 +78,20 @@ impl DzContextInner {
                 Some(c) => c
             }
         )
+    }
+
+    /// Kills the job.  
+    pub async fn kill_reminder_job(&self, task_id: i64) -> bool {
+        let job = self.reminders_ctl.get(&task_id);
+        if let Some(job) = job {
+            if let Err(e) = job.kill() {
+                eprintln!("Error killing embed reminder job: {e}");
+                return false;
+            } else {
+                return true;
+            }
+        }
+        false
     }
 }
 
