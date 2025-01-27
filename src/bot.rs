@@ -81,22 +81,21 @@ impl DzContextInner {
     }
 
     /// Kills the job.  
-    pub async fn kill_reminder_job(&self, task_id: i64) -> bool {
+    pub fn kill_reminder_job(&self, task_id: i64) -> bool {
         let job = self.reminders_ctl.get(&task_id);
         if let Some(job) = job {
             if let Err(e) = job.kill() {
                 eprintln!("Error killing embed reminder job: {e}");
                 return false;
-            } else {
-                return true;
             }
+            return true;
         }
         false
     }
 }
 
 impl DZBot {
-    pub async fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<Database>) -> Self {
         let ctx = Arc::new(RwLock::new(
             DzContextInner {
                 db: db.clone(),
@@ -117,15 +116,15 @@ fn parse_text(content: &String) -> Result<TaskCreateInfo, String> {
     let title = lines.next().ok_or(String::from("no title?"))?.to_string();
     let times_str = lines.next_back().ok_or(String::from("no times?"))?.to_string();
     let (remind_at, on_days, repeat_weekly) = 
-        parse_time_string(times_str).ok_or(String::from("bad time"))?;
+        parse_time_string(&times_str).ok_or(String::from("bad time"))?;
     let info: String = lines.collect::<Vec<_>>().join("\n");
     Ok(
-        TaskCreateInfo {
-            title,
-            info,
-            on_days,
-            remind_at,
-            repeat_weekly
+        TaskCreateInfo { 
+            title, 
+            info, 
+            remind_at, 
+            on_days, 
+            repeat_weekly 
         }
     )
 }
@@ -218,7 +217,7 @@ impl EventHandler for DZBot {
                     .expect("couldnt alert user of failure");
                 return;
             }
-            Ok(c) => {
+            Ok(_c) => {
                 println!("success");
             }
         }

@@ -59,7 +59,7 @@ impl SpamPingJob {
                 ctx.read().await.get_dm_channel(http.clone(), user_id).await
                 .unwrap();
             let ping = CreateMessage::new()
-                .content(format!("{} hey buddy", user_id.mention().to_string()));
+                .content(format!("{} hey buddy", user_id.mention()));
             'outer: loop {
                 if let Err(e) = from_ctl.changed().await {
                     // channel closes here
@@ -118,16 +118,16 @@ pub struct EmbedReminderJob {
 }
 
 impl EmbedReminderJob {
-    pub fn new(ctx: DzContext, http: Arc<Http>, task: Task) -> Result<Self> {
+    pub fn new(ctx: DzContext, http: Arc<Http>, task: Task) -> Self {
         let (to_task, mut from_ctl) = watch::channel(false);
         let (_to_ctl, from_task) = watch::channel(false);
 
         tokio::spawn(embed_reminder_job(ctx, http, task, from_ctl));
 
-        Ok(EmbedReminderJob {
+        EmbedReminderJob {
             to_task,
             from_task: Mutex::new(from_task)
-        })
+        }
     }
 
     /// Immediately stops the scheduled reminder task
@@ -143,72 +143,42 @@ async fn embed_reminder_job(
     task: Task,
     mut from_ctl: watch::Receiver<bool>,
 ) {
-    let (task_info, id) = match &task {
-        Task::Recurring { id, user_id, title, info, remind_at, .. } => 
-        (
-            TaskRemindInfo {
-                title: title.into(),
-                info: info.into(),
-                user_id: user_id.clone(),
-            },
-            *id
-        ),
-        Task::Once { id, user_id, title, info, remind_at, .. } => 
-        (
-            TaskRemindInfo {
-                title: title.into(),
-                info: info.into(),
-                user_id: user_id.clone(),
-            },
-            *id
-        ),
-    };
+    let task_info = task.remind_info();
+    let id = task.id();
 
-    let db = ctx.read().await.db.clone();
     let remove_from_map = || async {
         ctx.write().await.reminders_ctl.remove_entry(&id);
     };
 
     loop {
-        // TODO! this is for testing
-
-        
-        match sleep_until_next(&task) {
-            Some(sleep) => {
-                tokio::select! {
-                    _ = sleep => {
-
-                    },
-                    _ = from_ctl.changed() => {
-                        // this means a cancel signal has been sent.
-                        remove_from_map().await;
-                        return;
-                    }
-                };
-            },
-            None => {
-                // theres no more times to repeat this task
-                // remove remind task
-                remove_from_map().await;
-                // kill this thread
-                return;
-            }
+        if let Some(sleep) = sleep_until_next(&task) {
+            tokio::select! {
+                _ = sleep => {
+                    // do nothing and continue
+                },
+                _ = from_ctl.changed() => {
+                    // this means a cancel signal has been sent.
+                    remove_from_map().await;
+                    return;
+                }
+            };
+        } else {
+            // theres no more times to repeat this task
+            // remove remind task
+            remove_from_map().await;
+            // kill this thread
+            return;
         }
 
         send_embed(
             http.clone(), 
-            db.clone(), 
             ctx.clone(),
             task_info.clone(), 
         ).await.unwrap();
 
-        {
-            let m = ctx.read().await;
-            let ctl = m.spammer_ctl.get(&task_info.user_id).unwrap();
-            ctl.signal(SpamPingSignal::Start);
-        }
-
-        // chekc if should be done or schedule new one
+        let m = ctx.read().await;
+        let ctl = m.spammer_ctl.get(&task_info.user_id).unwrap();
+        ctl.signal(SpamPingSignal::Start);
     }
 }
 
@@ -222,9 +192,7 @@ fn sleep_until_next(task: &Task) -> Option<Sleep> {
     let next = next_occurrence_time(task)?;
     let instant = Instant::now();
     let now = OffsetDateTime::now_utc();
-    if next < now {
-        panic!("You're cooked. ff ");
-    }
+    assert!(next >= now, "You're cooked. ff ");
 
     let dur = next - now;
     let dur = std::time::Duration::new(
@@ -237,7 +205,6 @@ fn sleep_until_next(task: &Task) -> Option<Sleep> {
 
 async fn send_embed(
     http: Arc<Http>,
-    db: Arc<Database>,
     ctx: DzContext, 
     task_info: TaskRemindInfo, 
 ) -> Result<()> {

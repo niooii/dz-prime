@@ -1,6 +1,4 @@
 use serenity::all::Http;
-use tokio::{sync::{oneshot, watch, Mutex, RwLock}, task::JoinHandle};
-use chrono::{Duration, Local, Offset};
 use std::{sync::Arc, time::Duration as StdDuration};
 use anyhow::Result;
 
@@ -47,7 +45,7 @@ impl TaskScheduler {
         ctx.reminders_ctl
             .insert(
                 task_id, 
-                EmbedReminderJob::new(self.ctx.clone(), http, task)?
+                EmbedReminderJob::new(self.ctx.clone(), http, task)
             );
         
         Ok(())

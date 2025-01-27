@@ -1,4 +1,4 @@
-use std::{collections::HashSet, convert::{TryFrom, TryInto}};
+use std::{collections::HashSet, convert::{TryFrom, TryInto}, f32::consts::PI};
 use std::iter::FromIterator;
 use anyhow::Result;
 use chrono::Offset;
@@ -122,6 +122,7 @@ pub enum Task {
         user_id: UserId,
         title: String,
         info: String,
+        // TODO! change to a better type
         remind_at: i32,
         on_days: HashSet<DayOfWeek>, 
         repeat_weekly: bool,
@@ -132,6 +133,7 @@ pub enum Task {
         user_id: UserId,
         title: String,
         info: String,
+        // TODO! change to a better type, like time or something
         remind_at: i32,
         date: Date,
         created_at: OffsetDateTime
@@ -170,6 +172,52 @@ impl Task {
                 }
             }
         )
+    }
+
+    pub fn id(&self) -> i64 {
+        match self {
+            Self::Recurring { id, .. }
+            | Self::Once { id, .. } => *id
+        }
+    }
+
+    pub fn user_id(&self) -> &UserId {
+        match self {
+            Self::Recurring { user_id, .. }
+            | Self::Once { user_id, .. } => user_id
+        }
+    }
+
+    pub fn remind_at(&self) -> i32 {
+        match self {
+            Self::Recurring { remind_at, .. }
+            | Self::Once { remind_at, .. } => *remind_at
+        }
+    }
+
+    pub fn created_at(&self) -> &OffsetDateTime {
+        match self {
+            Self::Recurring { created_at, .. }
+            | Self::Once { created_at, .. } => created_at
+        }
+    }
+
+    pub fn recurring(&self) -> bool {
+        match self {
+            Self::Recurring {..} => true,
+            Self::Once {..} => false
+        }
+    }
+
+    pub fn remind_info(&self) -> TaskRemindInfo {
+        match self {
+            Self::Once { user_id, title, info, .. } | Task::Recurring { user_id, title, info, .. } => 
+            TaskRemindInfo {
+                title: title.into(),
+                info: info.into(),
+                user_id: *user_id,
+            },
+        }
     }
 }
 

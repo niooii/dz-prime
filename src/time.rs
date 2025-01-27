@@ -54,7 +54,7 @@ fn parse_repeat_weekly(token: &String) -> bool {
 }
 
 /// Returns a tuple of (remind_at, on_days, repeat_weekly)
-pub fn parse_time_string(time_str: String) -> Option<(i32, HashSet<DayOfWeek>, bool)> {
+pub fn parse_time_string(time_str: &str) -> Option<(i32, HashSet<DayOfWeek>, bool)> {
     let tokens: Vec<String> = time_str.split(" ").map(String::from).collect();
 
     if tokens.len() < 2 {

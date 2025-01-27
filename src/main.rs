@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
 
     let mut client =
     Client::builder(&token, intents).event_handler(
-        DZBot::new(Arc::new(db)).await
+        DZBot::new(Arc::new(db))
     ).await.expect("Err creating client");
 
     println!("Starting bot...");
