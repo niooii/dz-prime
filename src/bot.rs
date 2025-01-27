@@ -234,7 +234,8 @@ impl EventHandler for DZBot {
             if let Some(days) = task.on_days() {
                 format!("{days:?}\nrepeating weekly: {}", task.repeats_weekly())
             } else {
-                task.datetime()
+                // shoudl be in est or whatever local is (also add a UTC line)
+                format!("{} (or {} UTC)", task.datetime(), task.datetime().utc())
             },
         );
         msg.reply_ping(ctx, "ok").await
