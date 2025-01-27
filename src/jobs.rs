@@ -50,7 +50,7 @@ pub struct SpamPingJob {
 // }
 
 impl SpamPingJob {
-    pub fn new(ctx: DzContext, http: Arc<Http>, user_id: UserId) -> Result<Self> {
+    pub fn new(ctx: DzContext, http: Arc<Http>, user_id: UserId) -> Self {
         let (to_task, mut from_ctl) = watch::channel(SpamPingSignal::Stop);
         let (to_ctl, from_task) = watch::channel(SpamPingStatus::Stopped);
         
