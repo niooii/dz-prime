@@ -105,7 +105,7 @@ impl DZBot {
             }
         ));
         Self {
-            scheduler: TaskScheduler::new(ctx.clone()).expect("Failed to run task scheduler"),
+            scheduler: TaskScheduler::new(ctx.clone()),
             ctx,
             db,
         }

@@ -96,12 +96,10 @@ impl SpamPingJob {
             }
         });
 
-        Ok(
-            SpamPingJob {
-                to_task,
-                from_task
-            }
-        )
+        SpamPingJob {
+            to_task,
+            from_task
+        }
     }
 
     pub fn status(&self) -> SpamPingStatus {

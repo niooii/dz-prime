@@ -11,8 +11,8 @@ pub struct TaskScheduler {
 }
 
 impl TaskScheduler {
-    pub fn new(ctx: DzContext) -> Result<Self> {
-        Ok(TaskScheduler { ctx })
+    pub fn new(ctx: DzContext) -> Self {
+        TaskScheduler { ctx }
     }
 
     // Returns a channel.
@@ -29,8 +29,7 @@ impl TaskScheduler {
 
         println!("Adding task: {task:?}");
         let (task_id, uid) = match task {
-            Task::Recurring { id, user_id, .. } => (id, user_id),
-            Task::Once { id, user_id, .. } => (id, user_id),
+            Task::Once { id, user_id, .. } | Task::Recurring { id, user_id, .. } => (id, user_id),
         };
 
         let mut ctx = self.ctx.write().await;
@@ -42,7 +41,7 @@ impl TaskScheduler {
                     self.ctx.clone(), 
                     http.clone(),
                     uid
-                ).unwrap()
+                )
             });
 
         ctx.reminders_ctl
