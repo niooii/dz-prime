@@ -1,7 +1,7 @@
 use std::{collections::HashSet, convert::{TryFrom, TryInto}, f32::consts::PI};
 use std::iter::FromIterator;
 use anyhow::Result;
-use chrono::Offset;
+use chrono::{Local, Offset};
 use serenity::all::UserId;
 use sqlx::{postgres::PgHasArrayType, types::time::{Date, OffsetDateTime}};
 use time::{convert::Week, Time, Weekday};
@@ -172,8 +172,24 @@ impl Task {
     	}
     }
 
+	/// Local time
+    pub fn datetime_local(&self) -> Option<OffsetDateTime> {
+    	match self {
+    		Self::Once { date, remind_at, .. } => {
+                let offset_sec = Local::now()
+                    .offset()
+                    .local_minus_utc();
+                let local_offset = UtcOffset::from_whole_seconds(offset_sec)
+                    .expect("??");
+    			Some(date.with_time(*remind_at)
+                    .assume_offset(UtcOffset::UTC).to_offset(local_offset))
+    		},
+    		Self::Recurring { .. } => None
+    	}
+    }
+
 	/// UTC time
-    pub fn datetime(&self) -> Option<OffsetDateTime> {
+    pub fn datetime_utc(&self) -> Option<OffsetDateTime> {
     	match self {
     		Self::Once { date, remind_at, .. } => {
     			Some(date.with_time(*remind_at).assume_offset(UtcOffset::UTC))

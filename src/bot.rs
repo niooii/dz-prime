@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
+use ::time::macros::{format_description, offset};
 use ::time::UtcOffset;
 use crate::database::Database;
 use crate::jobs::{EmbedReminderJob, SpamPingJob, SpamPingSignal, SpamPingStatus};
@@ -232,13 +233,27 @@ impl EventHandler for DZBot {
         let reply = format!(
             "ok\nreminding on {}",
             if let Some(days) = task.on_days() {
-                format!("{days:?}\nrepeating weekly: {}", task.repeats_weekly())
+                // TODO! neatly lay out in order
+                let days = days;
+                format!("**{days:?}**\nrepeating weekly: **{}**", task.repeats_weekly())
             } else {
                 // shoudl be in est or whatever local is (also add a UTC line)
-                format!("{} (or {} UTC)", task.datetime().unwrap(), task.datetime().unwrap().to_offset(UtcOffset::UTC))
+                let datetime_local = task.datetime_local().unwrap();
+                let datetime_utc = task.datetime_utc().unwrap();
+                format!(
+                    "**{}** at **{}** in local time\nor **{}** at **{}** UTC", 
+                    datetime_local.date()
+                        .format(format_description!("[year]/[month]/[day]")).unwrap(), 
+                    datetime_local.time()
+                        .format(format_description!("[hour repr:12]:[minute] [period]")).unwrap(),
+                    datetime_utc.date()
+                        .format(format_description!("[year]/[month]/[day]")).unwrap(), 
+                    datetime_utc.time()
+                        .format(format_description!("[hour repr:12]:[minute] [period]")).unwrap()
+                )
             },
         );
-        msg.reply_ping(ctx, "ok").await
+        msg.reply_ping(ctx, reply).await
             .expect("couldnt alert user of SUCCESS??");
     }
 }
