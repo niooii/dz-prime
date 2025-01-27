@@ -6,7 +6,7 @@ use crate::database::Database;
 use crate::jobs::{EmbedReminderJob, SpamPingJob, SpamPingSignal, SpamPingStatus};
 use crate::model::{Task, TaskCreateInfo, TaskRemindInfo};
 use crate::scheduler::{TaskScheduler};
-use crate::time_parse::parse_time_string;
+use crate::time_parse::{TaskTimeInfo};
 use serenity::all::{Channel, ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mention, MessageBuilder, ReactionType, Ready, UserId};
 use serenity::{async_trait, json::json};
 use serenity::model::channel::Message;
@@ -24,13 +24,19 @@ FORMAT EXAMPLE:
 [TIME]
 
 TIME is:
-[time days repeatweekly]
+[time date OR days repeatweekly]
 VALID TIME EXAMPLES:
 9am UMTWRFS rep
 9am a rep (a = ALL)
 9:30am UMTWRFS
 9:30am umtwrfs rep
 10pm mwf
+10pm 1/29
+
+VALID DATES:
+month/day
+td = today
+tmr = tommorow
 ";
 
 pub struct DzContextInner {
@@ -115,16 +121,16 @@ fn parse_text(content: &String) -> Result<TaskCreateInfo, String> {
     let mut lines = content.lines();
     let title = lines.next().ok_or(String::from("no title?"))?.to_string();
     let times_str = lines.next_back().ok_or(String::from("no times?"))?.to_string();
-    let (remind_at, on_days, repeat_weekly) = 
-        parse_time_string(&times_str).ok_or(String::from("bad time"))?;
+    let time_info = TaskTimeInfo::parse(&times_str)?;
     let info: String = lines.collect::<Vec<_>>().join("\n");
     Ok(
         TaskCreateInfo { 
             title, 
             info, 
-            remind_at, 
-            on_days, 
-            repeat_weekly 
+            remind_at: time_info.remind_time, 
+            on_days: time_info.days_of_week, 
+            repeat_weekly: time_info.repeat_weekly,
+            date: time_info.date 
         }
     )
 }
@@ -196,8 +202,8 @@ impl EventHandler for DZBot {
             }
         };
 
-        if create_info.on_days.len() == 0 {
-            msg.reply_ping(ctx, String::from("enter some days man")).await
+        if create_info.on_days.is_none() && create_info.date.is_none() {
+            msg.reply_ping(ctx, String::from("bro gave me no info")).await
                 .expect("couldnt alert user of failure");
             return;
         }
@@ -222,6 +228,11 @@ impl EventHandler for DZBot {
             }
         }
 
+        // Send back info to user
+        let reply = format!(
+            "ok\nreminding on {}\n{}",
+            task.days
+        );
         msg.reply_ping(ctx, "ok").await
             .expect("couldnt alert user of SUCCESS??");
     }

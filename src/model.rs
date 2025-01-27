@@ -125,6 +125,13 @@ impl Task {
         }
     }
 
+    pub fn repeats_weekly(&self) -> bool {
+        match self {
+            Self::Recurring { repeat_weekly, .. } => *repeat_weekly,
+            Self::Once { .. } => false
+        }
+    }
+
     pub fn remind_at(&self) -> Time {
         match self {
             Self::Recurring { remind_at, .. }
@@ -138,6 +145,8 @@ impl Task {
             | Self::Once { created_at, .. } => created_at
         }
     }
+
+    pub fn 
 
     pub fn recurring(&self) -> bool {
         match self {
@@ -162,7 +171,8 @@ pub struct TaskCreateInfo {
     pub title: String,
     pub info: String,
     pub remind_at: Time,
-    pub on_days: HashSet<Weekday>, 
+    pub date: Option<Date>,
+    pub on_days: Option<HashSet<Weekday>>, 
     pub repeat_weekly: bool,
 }
 

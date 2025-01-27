@@ -99,23 +99,40 @@ impl Database {
     }
 
     pub async fn add_task(&self, user_id: &UserId, task: &TaskCreateInfo) -> Result<Task> {
-        // the things we do for type safety.
-        let on_days: Vec<i32> = 
-            task.on_days.iter().map(|e| e.number_from_sunday() as i32).collect::<Vec<_>>();
-        Task::from_row_struct(
-            query_as!(
-                TaskRow,
-                r#"INSERT INTO tasks (user_id, title, info, remind_at, on_days, repeat_weekly)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING *"#,
-                user_id.to_string(),
-                task.title,
-                task.info,
-                task.remind_at,
-                &on_days,
-                task.repeat_weekly
-            ).fetch_one(&self.pool).await?
-        )
+        if let Some(d) = task.date {
+            Task::from_row_struct(
+                query_as!(
+                    TaskRow,
+                    r#"INSERT INTO tasks (user_id, title, info, remind_at, on_date, repeat_weekly)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING *"#,
+                    user_id.to_string(),
+                    task.title,
+                    task.info,
+                    task.remind_at,
+                    d,
+                    false
+                ).fetch_one(&self.pool).await?
+            )
+        } else {
+            let on_days: Vec<i32> = 
+            task.on_days.as_ref().expect("its over")
+                .iter().map(|e| e.number_from_sunday() as i32).collect::<Vec<_>>();
+            Task::from_row_struct(
+                query_as!(
+                    TaskRow,
+                    r#"INSERT INTO tasks (user_id, title, info, remind_at, on_days, repeat_weekly)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING *"#,
+                    user_id.to_string(),
+                    task.title,
+                    task.info,
+                    task.remind_at,
+                    &on_days,
+                    task.repeat_weekly
+                ).fetch_one(&self.pool).await?
+            )
+        }
     }
 
     pub async fn delete_task(&self, id: i64) -> Result<()> {

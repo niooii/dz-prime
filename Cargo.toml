@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = "1.0.95"
 chrono = "0.4.39"
 dotenvy = "0.15.7"
+itertools = "0.14.0"
 serenity = "0.12.4"
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "postgres", "time"] }
 thiserror = "2.0.11"

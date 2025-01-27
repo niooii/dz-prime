@@ -26,29 +26,6 @@ pub struct SpamPingJob {
     from_task: watch::Receiver<SpamPingStatus>,
 }
 
-// pub async fn spam_ping(
-//     http: Arc<Http>,
-//     ctx: Arc<RwLock<DzContext>>, 
-//     user_id: UserId,
-//     from_ctl: Arc<Mutex<watch::Receiver<bool>>>,
-//     to_ctl: Arc<watch::Sender<bool>>,
-// ) i> Result<()> {
-//     println!("START SPAM ROUTINE..");
-//     let db = ctx.read().await.db;
-//     let channel = db.dm_channel(&user_id)
-//         .await.expect("Channel shouldve been inserted in send_embed already");
-
-//     while let Err(e) = channel {
-//         eprintln!("Error fetching channel: {e}.");
-//         let retry_time = 300;
-//         eprintln!("Trying to refetch in {retry_time}ms..");
-//         time::sleep(Duration::from_millis(retry_time)).await;
-//         channel = task_info.user_id.create_dm_channel(http.clone())
-//             .await;
-//     }
-//     println!("spam routine end..");
-// }
-
 impl SpamPingJob {
     pub fn new(ctx: DzContext, http: Arc<Http>, user_id: UserId) -> Self {
         let (to_task, mut from_ctl) = watch::channel(SpamPingSignal::Stop);
