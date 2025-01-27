@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-
+use ::time::UtcOffset;
 use crate::database::Database;
 use crate::jobs::{EmbedReminderJob, SpamPingJob, SpamPingSignal, SpamPingStatus};
 use crate::model::{Task, TaskCreateInfo, TaskRemindInfo};
@@ -155,7 +155,7 @@ impl EventHandler for DZBot {
         println!("found {} tasks.. rescheduling all...", tasks.len());
 
         for task in tasks {
-            self.scheduler.add_task(ctx.http.clone(), task).await.unwrap();
+            self.scheduler.add_task(ctx.http.clone(), &task).await.unwrap();
         }
 
         println!("finished rescheduling all tasks...");
@@ -217,7 +217,7 @@ impl EventHandler for DZBot {
                 return;
             }
         };
-        match self.scheduler.add_task(ctx.http.clone(), task).await {
+        match self.scheduler.add_task(ctx.http.clone(), &task).await {
             Err(e) => {
                 msg.reply_ping(ctx, format!("Failed to schedule task: {e}")).await
                     .expect("couldnt alert user of failure");
@@ -235,7 +235,7 @@ impl EventHandler for DZBot {
                 format!("{days:?}\nrepeating weekly: {}", task.repeats_weekly())
             } else {
                 // shoudl be in est or whatever local is (also add a UTC line)
-                format!("{} (or {} UTC)", task.datetime(), task.datetime().utc())
+                format!("{} (or {} UTC)", task.datetime().unwrap(), task.datetime().unwrap().to_offset(UtcOffset::UTC))
             },
         );
         msg.reply_ping(ctx, "ok").await

@@ -95,11 +95,11 @@ pub struct EmbedReminderJob {
 }
 
 impl EmbedReminderJob {
-    pub fn new(ctx: DzContext, http: Arc<Http>, task: Task) -> Self {
+    pub fn new(ctx: DzContext, http: Arc<Http>, task: &Task) -> Self {
         let (to_task, mut from_ctl) = watch::channel(false);
         let (_to_ctl, from_task) = watch::channel(false);
 
-        tokio::spawn(embed_reminder_job(ctx, http, task, from_ctl));
+        tokio::spawn(embed_reminder_job(ctx, http, task.clone(), from_ctl));
 
         EmbedReminderJob {
             to_task,

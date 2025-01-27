@@ -15,7 +15,7 @@ impl TaskScheduler {
 
     // Returns a channel.
     // Upon sending any value to this channel, if active, the spam routine will stop.
-    pub async fn add_task(&self, http: Arc<Http>, task: Task) -> Result<()> {
+    pub async fn add_task(&self, http: Arc<Http>, task: &Task) -> Result<()> {
         
         // let days_str = task.on_days.clone().into_iter().map(|d| i32::from(d).to_string())
         //     .collect::<Vec<String>>().join(",");
@@ -33,18 +33,18 @@ impl TaskScheduler {
         let mut ctx = self.ctx.write().await;
 
         // insert a spammer controller if there isnt one
-        ctx.spammer_ctl.entry(uid)
+        ctx.spammer_ctl.entry(*uid)
             .or_insert_with(|| {
                 SpamPingJob::new(
                     self.ctx.clone(), 
                     http.clone(),
-                    uid
+                    *uid
                 )
             });
 
         ctx.reminders_ctl
             .insert(
-                task_id, 
+                *task_id, 
                 EmbedReminderJob::new(self.ctx.clone(), http, task)
             );
         

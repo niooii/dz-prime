@@ -5,6 +5,7 @@ use chrono::Offset;
 use serenity::all::UserId;
 use sqlx::{postgres::PgHasArrayType, types::time::{Date, OffsetDateTime}};
 use time::{convert::Week, Time, Weekday};
+use ::time::UtcOffset;
 
 /// Database row structs
 #[derive(sqlx::FromRow)]
@@ -43,7 +44,7 @@ impl UserSettings {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Task {
     Recurring {
         id: i64,
@@ -146,8 +147,6 @@ impl Task {
         }
     }
 
-    pub fn 
-
     pub fn recurring(&self) -> bool {
         match self {
             Self::Recurring {..} => true,
@@ -164,6 +163,23 @@ impl Task {
                 user_id: *user_id,
             },
         }
+    }
+
+    pub fn on_days(&self) -> Option<&HashSet<Weekday>> {
+    	match self {
+    		Self::Once { .. } => None,
+    		Self::Recurring { on_days, .. } => Some(on_days)
+    	}
+    }
+
+	/// UTC time
+    pub fn datetime(&self) -> Option<OffsetDateTime> {
+    	match self {
+    		Self::Once { date, remind_at, .. } => {
+    			Some(date.with_time(*remind_at).assume_offset(UtcOffset::UTC))
+    		},
+    		Self::Recurring { .. } => None
+    	}
     }
 }
 
