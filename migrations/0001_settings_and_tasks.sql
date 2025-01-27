@@ -9,11 +9,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     title           TEXT NOT NULL,
     info            TEXT NOT NULL,
     time_created    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    -- the minute of the day
-    remind_at       INT NOT NULL CHECK (remind_at >= 0 AND remind_at < 1440),
+    remind_at       TIME NOT NULL,
     -- either (on_days and repeat_weekly) or date must be non null
     on_date         DATE,
-    -- where 0 = sunday, 1 = monday, etc.
-    on_days         INTEGER[],
+    -- 1-indexed starting from sunday: 1-sunday, 2-monday, etc..
+    on_days         INT[],
     repeat_weekly   BOOLEAN NOT NULL DEFAULT false
 );

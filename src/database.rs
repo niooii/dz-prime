@@ -3,8 +3,9 @@ use std::str::FromStr;
 use serenity::all::{ChannelId, UserId};
 use sqlx::{postgres::{PgConnectOptions, PgPool, PgPoolOptions}, query, query_as, query_scalar};
 use anyhow::Result;
+use time::Weekday;
 
-use crate::model::{DayOfWeek, Task, TaskCreateInfo, TaskRow, UserSettings, UserSettingsRow};
+use crate::model::{Task, TaskCreateInfo, TaskRow, UserSettings, UserSettingsRow};
 
 pub struct Database {
     pool: PgPool
@@ -100,7 +101,7 @@ impl Database {
     pub async fn add_task(&self, user_id: &UserId, task: &TaskCreateInfo) -> Result<Task> {
         // the things we do for type safety.
         let on_days: Vec<i32> = 
-            task.on_days.iter().map(|e| i32::from(e.clone())).collect::<Vec<_>>();
+            task.on_days.iter().map(|e| e.number_from_sunday() as i32).collect::<Vec<_>>();
         Task::from_row_struct(
             query_as!(
                 TaskRow,
@@ -115,6 +116,16 @@ impl Database {
                 task.repeat_weekly
             ).fetch_one(&self.pool).await?
         )
+    }
+
+    pub async fn delete_task(&self, id: i64) -> Result<()> {
+        query!(
+            r"DELETE FROM tasks
+            WHERE id = $1",
+            id
+        ).execute(&self.pool).await
+        .map_err(anyhow::Error::from)
+        .map(|_| ())
     }
 
     pub async fn tasks_for(&self, user_id: &UserId) -> Result<Vec<Task>> {

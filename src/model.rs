@@ -4,79 +4,7 @@ use anyhow::Result;
 use chrono::Offset;
 use serenity::all::UserId;
 use sqlx::{postgres::PgHasArrayType, types::time::{Date, OffsetDateTime}};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, Hash)]
-pub enum DayOfWeek {
-    Sunday,     // 0
-    Monday,     // 1
-    Tuesday,    // 2
-    Wednesday,  // 3
-    Thursday,   // 4
-    Friday,     // 5
-    Saturday,   // 6
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("Invalid day number: {0}. Must be between 0 and 6")]
-pub struct InvalidDayError(i32);
-
-impl TryFrom<i32> for DayOfWeek {
-    type Error = InvalidDayError;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Sunday),
-            1 => Ok(Self::Monday),
-            2 => Ok(Self::Tuesday),
-            3 => Ok(Self::Wednesday),
-            4 => Ok(Self::Thursday),
-            5 => Ok(Self::Friday),
-            6 => Ok(Self::Saturday),
-            invalid => Err(InvalidDayError(invalid)),
-        }
-    }
-}
-
-impl From<DayOfWeek> for i32 {
-    fn from(day: DayOfWeek) -> i32 {
-        match day {
-            DayOfWeek::Sunday => 0,
-            DayOfWeek::Monday => 1,
-            DayOfWeek::Tuesday => 2,
-            DayOfWeek::Wednesday => 3,
-            DayOfWeek::Thursday => 4,
-            DayOfWeek::Friday => 5,
-            DayOfWeek::Saturday => 6,
-        }
-    }
-}
-
-impl DayOfWeek {
-    pub fn all() -> [DayOfWeek; 7] {
-        [
-            Self::Sunday,
-            Self::Monday,
-            Self::Tuesday,
-            Self::Wednesday,
-            Self::Thursday,
-            Self::Friday,
-            Self::Saturday,
-        ]
-    }
-
-    // Convert to string representation
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Sunday => "Sunday",
-            Self::Monday => "Monday",
-            Self::Tuesday => "Tuesday",
-            Self::Wednesday => "Wednesday",
-            Self::Thursday => "Thursday",
-            Self::Friday => "Friday",
-            Self::Saturday => "Saturday",
-        }
-    }
-}
+use time::{convert::Week, Time, Weekday};
 
 /// Database row structs
 #[derive(sqlx::FromRow)]
@@ -91,7 +19,7 @@ pub struct TaskRow {
     pub user_id: String,
     pub title: String,
     pub info: String,
-    pub remind_at: i32,
+    pub remind_at: Time,
     pub on_days: Option<Vec<i32>>, 
     pub repeat_weekly: bool,
     pub time_created: OffsetDateTime,
@@ -122,9 +50,8 @@ pub enum Task {
         user_id: UserId,
         title: String,
         info: String,
-        // TODO! change to a better type
-        remind_at: i32,
-        on_days: HashSet<DayOfWeek>, 
+        remind_at: Time,
+        on_days: HashSet<Weekday>, 
         repeat_weekly: bool,
         created_at: OffsetDateTime
     },
@@ -133,8 +60,7 @@ pub enum Task {
         user_id: UserId,
         title: String,
         info: String,
-        // TODO! change to a better type, like time or something
-        remind_at: i32,
+        remind_at: Time,
         date: Date,
         created_at: OffsetDateTime
     }
@@ -142,6 +68,18 @@ pub enum Task {
 
 impl Task {
     pub fn from_row_struct(row: TaskRow) -> Result<Self> {
+        let weekday_from_i32 = |i: &i32| {
+            match i {
+                1 => Weekday::Sunday,
+                2 => Weekday::Monday,
+                3 => Weekday::Tuesday,
+                4 => Weekday::Wednesday,
+                5 => Weekday::Thursday,
+                6 => Weekday::Friday,
+                7 => Weekday::Saturday,
+                _ => panic!("Invalid weekday number: {}", i),
+            }
+        };
         Ok(
             if let Some(date) = row.on_date {
                 Self::Once {
@@ -163,8 +101,7 @@ impl Task {
                     // row.on_days should never be None bc input validation!
                     on_days: {
                         HashSet::from_iter(
-                            row.on_days.unwrap().iter().map(|d| DayOfWeek::try_from(d.clone())
-                                .expect("Day of week input should be sanitized. Wtf??"))
+                            row.on_days.unwrap().iter().map(weekday_from_i32)
                         )
                     },
                     repeat_weekly: row.repeat_weekly,
@@ -188,7 +125,7 @@ impl Task {
         }
     }
 
-    pub fn remind_at(&self) -> i32 {
+    pub fn remind_at(&self) -> Time {
         match self {
             Self::Recurring { remind_at, .. }
             | Self::Once { remind_at, .. } => *remind_at
@@ -224,8 +161,8 @@ impl Task {
 pub struct TaskCreateInfo {
     pub title: String,
     pub info: String,
-    pub remind_at: i32,
-    pub on_days: HashSet<DayOfWeek>, 
+    pub remind_at: Time,
+    pub on_days: HashSet<Weekday>, 
     pub repeat_weekly: bool,
 }
 

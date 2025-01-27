@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use crate::database::Database;
 use crate::jobs::{EmbedReminderJob, SpamPingJob, SpamPingSignal, SpamPingStatus};
-use crate::model::{DayOfWeek, Task, TaskCreateInfo, TaskRemindInfo};
+use crate::model::{Task, TaskCreateInfo, TaskRemindInfo};
 use crate::scheduler::{TaskScheduler};
-use crate::time::parse_time_string;
+use crate::time_parse::parse_time_string;
 use serenity::all::{Channel, ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mention, MessageBuilder, ReactionType, Ready, UserId};
 use serenity::{async_trait, json::json};
 use serenity::model::channel::Message;

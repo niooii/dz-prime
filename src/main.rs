@@ -4,7 +4,7 @@ mod bot;
 mod scheduler;
 mod jobs;
 mod database;
-mod time;
+mod time_parse;
 use bot::DZBot;
 use database::Database;
 use serenity::prelude::*;

@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use chrono::Offset;
 use serenity::all::{ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mentionable, UserId};
-use ::time::OffsetDateTime;
+use ::time::{Date, OffsetDateTime};
 use tokio::{sync::{watch, Mutex}, time::{self, Instant, Sleep}};
 use anyhow::Result;
 
@@ -146,8 +146,10 @@ async fn embed_reminder_job(
     let task_info = task.remind_info();
     let id = task.id();
 
-    let remove_from_map = || async {
-        ctx.write().await.reminders_ctl.remove_entry(&id);
+    let remove = || async {
+        let mut ctx = ctx.write().await;
+        ctx.reminders_ctl.remove_entry(&id);
+        ctx.db.delete_task(id).await.expect("Could not delte for some reason");
     };
 
     loop {
@@ -158,14 +160,14 @@ async fn embed_reminder_job(
                 },
                 _ = from_ctl.changed() => {
                     // this means a cancel signal has been sent.
-                    remove_from_map().await;
+                    remove().await;
                     return;
                 }
             };
         } else {
             // theres no more times to repeat this task
             // remove remind task
-            remove_from_map().await;
+            remove().await;
             // kill this thread
             return;
         }
@@ -184,7 +186,10 @@ async fn embed_reminder_job(
 
 fn next_occurrence_time(task: &Task) -> Option<OffsetDateTime> {
     // TODO!
-    Some(OffsetDateTime::now_utc() + Duration::from_secs(5))
+    let curr = OffsetDateTime::now_utc();
+    curr.date();
+    // Some(OffsetDateTime::now_utc() + Duration::from_secs(5))
+    None
 }
 
 /// Returns None if there is no next occurrence
