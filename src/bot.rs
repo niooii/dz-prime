@@ -230,8 +230,12 @@ impl EventHandler for DZBot {
 
         // Send back info to user
         let reply = format!(
-            "ok\nreminding on {}\n{}",
-            task.days
+            "ok\nreminding on {}",
+            if let Some(days) = task.on_days() {
+                format!("{days:?}\nrepeating weekly: {}", task.repeats_weekly())
+            } else {
+                task.datetime()
+            },
         );
         msg.reply_ping(ctx, "ok").await
             .expect("couldnt alert user of SUCCESS??");
