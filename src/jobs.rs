@@ -163,7 +163,7 @@ async fn embed_reminder_job(
 }
 
 /// Returns the next occurence or None if there isnt one.
-fn next_occurrence_time(task: &Task) -> Option<OffsetDateTime> {
+pub fn next_occurrence_time(task: &Task) -> Option<OffsetDateTime> {
     let now = OffsetDateTime::now_utc();
     match task {
         Task::Once { remind_at, date, .. } => {
@@ -174,14 +174,25 @@ fn next_occurrence_time(task: &Task) -> Option<OffsetDateTime> {
             // use the previous day as the referece point for date.next_occurence(Weekday), because the current day can count as well.
             let ref_date = created_at.date().previous_day().unwrap();
 
-            let closest = on_days.iter()
-                .map(|d| ref_date.next_occurrence(*d).with_time(*remind_at).assume_utc())
-                .filter(|d| *d > now)
-                .sorted().next()?;
-
             if *repeat_weekly {
+                let closest = on_days.iter()
+                    .map(|d| {
+                        let dt = ref_date.next_occurrence(*d).with_time(*remind_at).assume_utc();
+                        if dt <= now {
+                            ref_date.nth_next_occurrence(*d, 2).with_time(*remind_at).assume_utc()
+                        } else {
+                            dt
+                        }
+                    })
+                    .sorted().next()?;
+
                 Some(closest)
             } else {
+                let closest = on_days.iter()
+                    .map(|d| ref_date.next_occurrence(*d).with_time(*remind_at).assume_utc())
+                    .filter(|d| *d > now)
+                    .sorted().next()?;
+
                 let days_since_created = (closest-*created_at).whole_days();
                 (days_since_created < 7).then_some(closest)
             }

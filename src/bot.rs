@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
+use chrono::Local;
 use ::time::macros::{format_description, offset};
 use ::time::UtcOffset;
 use crate::database::Database;
-use crate::jobs::{EmbedReminderJob, SpamPingJob, SpamPingSignal, SpamPingStatus};
+use crate::jobs::{next_occurrence_time, EmbedReminderJob, SpamPingJob, SpamPingSignal, SpamPingStatus};
 use crate::model::{Task, TaskCreateInfo, TaskRemindInfo};
 use crate::scheduler::{TaskScheduler};
 use crate::time_parse::{TaskTimeInfo};
@@ -147,6 +148,42 @@ async fn report_err(channel: ChannelId, http: Arc<Http>, err: impl ToString + In
     }
 }
 
+fn reply_string(task: &Task) -> String {
+    if let Some(dt_utc) = next_occurrence_time(&task) {
+        let offset_sec = Local::now()
+            .offset()
+            .local_minus_utc();
+        let local_offset = UtcOffset::from_whole_seconds(offset_sec)
+            .expect("??");
+        let dt_local = dt_utc.to_offset(local_offset);
+        format!(
+            "ok\nreminding on {}",
+            if let Some(days) = task.on_days() {
+                // TODO! neatly lay out in order
+                let days = days;
+                format!(
+                    "**{days:?}**\nrepeating weekly: **{}**\nnext reminder on **{}**\nor **{}** in UTC", 
+                    task.repeats_weekly(),
+                    dt_local
+                        .format(format_description!("`[year]/[month]/[day]` at `[hour]:[minute] [period]`")).unwrap(), 
+                    dt_utc
+                        .format(format_description!("`[year]/[month]/[day]` at `[hour]:[minute] [period]`")).unwrap(), 
+                )
+            } else {
+                format!(
+                    "**{}** in local time\nor **{}** in UTC", 
+                    dt_local
+                        .format(format_description!("`[year]/[month]/[day]` at `[hour]:[minute] [period]`")).unwrap(), 
+                    dt_utc
+                        .format(format_description!("`[year]/[month]/[day]` at `[hour]:[minute] [period]`")).unwrap(), 
+                )
+            },
+        )
+    } else {
+        "THIS REMINDER WILL NEVER RUN.".into()
+    }
+}
+
 #[async_trait]
 impl EventHandler for DZBot {
     async fn ready(&self, ctx: Context, _ready: Ready) {
@@ -230,29 +267,7 @@ impl EventHandler for DZBot {
         }
 
         // Send back info to user
-        let reply = format!(
-            "ok\nreminding on {}",
-            if let Some(days) = task.on_days() {
-                // TODO! neatly lay out in order
-                let days = days;
-                format!("**{days:?}**\nrepeating weekly: **{}**", task.repeats_weekly())
-            } else {
-                // shoudl be in est or whatever local is (also add a UTC line)
-                let datetime_local = task.datetime_local().unwrap();
-                let datetime_utc = task.datetime_utc().unwrap();
-                format!(
-                    "**{}** at **{}** in local time\nor **{}** at **{}** UTC", 
-                    datetime_local.date()
-                        .format(format_description!("[year]/[month]/[day]")).unwrap(), 
-                    datetime_local.time()
-                        .format(format_description!("[hour repr:12]:[minute] [period]")).unwrap(),
-                    datetime_utc.date()
-                        .format(format_description!("[year]/[month]/[day]")).unwrap(), 
-                    datetime_utc.time()
-                        .format(format_description!("[hour repr:12]:[minute] [period]")).unwrap()
-                )
-            },
-        );
+        let reply = reply_string(&task);
         msg.reply_ping(ctx, reply).await
             .expect("couldnt alert user of SUCCESS??");
     }
