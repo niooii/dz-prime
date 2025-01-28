@@ -1,8 +1,9 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use chrono::Offset;
+use itertools::Itertools;
 use serenity::all::{ChannelId, Colour, CreateEmbed, CreateMessage, Http, Mentionable, UserId};
-use ::time::{Date, OffsetDateTime};
+use ::time::{Date, OffsetDateTime, Weekday};
 use tokio::{sync::{watch, Mutex}, time::{self, Instant, Sleep}};
 use anyhow::Result;
 
@@ -161,20 +162,41 @@ async fn embed_reminder_job(
     }
 }
 
+/// Returns the next occurence or None if there isnt one.
 fn next_occurrence_time(task: &Task) -> Option<OffsetDateTime> {
-    // TODO!
-    let curr = OffsetDateTime::now_utc();
-    curr.date();
-    // Some(OffsetDateTime::now_utc() + Duration::from_secs(5))
-    None
+    let now = OffsetDateTime::now_utc();
+    match task {
+        Task::Once { remind_at, date, .. } => {
+            let dt = date.with_time(*remind_at).assume_utc();
+            (dt > now).then_some(dt)
+        }
+        Task::Recurring { remind_at, on_days, repeat_weekly, created_at, .. } => {
+            // use the previous day as the referece point for date.next_occurence(Weekday), because the current day can count as well.
+            let ref_date = created_at.date().previous_day().unwrap();
+
+            let closest = on_days.iter()
+                .map(|d| ref_date.next_occurrence(*d).with_time(*remind_at).assume_utc())
+                .filter(|d| *d > now)
+                .sorted().next()?;
+
+            if *repeat_weekly {
+                Some(closest)
+            } else {
+                let days_since_created = (closest-*created_at).whole_days();
+                (days_since_created < 7).then_some(closest)
+            }
+        }
+    }
 }
 
 /// Returns None if there is no next occurrence
 fn sleep_until_next(task: &Task) -> Option<Sleep> {
     let next = next_occurrence_time(task)?;
+    println!("next occurence time: {next}");
     let instant = Instant::now();
     let now = OffsetDateTime::now_utc();
-    assert!(next >= now, "You're cooked. ff ");
+    
+    assert!(next >= now, "gg cooked");
 
     let dur = next - now;
     let dur = std::time::Duration::new(

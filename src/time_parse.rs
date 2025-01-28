@@ -16,13 +16,13 @@ fn parse_dayofweek(c: char) -> Option<Weekday> {
     }
 }
 
-fn parse_on_days(token: &String) -> Option<HashSet<Weekday>> {
+fn parse_on_days(token: &str, day_shift: &DayShift) -> Option<HashSet<Weekday>> {
     if token.is_empty() {
         return None;
     }
     let upper = token.to_uppercase();
 
-    if upper.contains("A") {
+    if upper.contains('A') {
         return Some(HashSet::from(
             [
                 Weekday::Sunday,
@@ -37,7 +37,13 @@ fn parse_on_days(token: &String) -> Option<HashSet<Weekday>> {
     }
 
     let set = HashSet::from_iter(
-        upper.chars().filter_map(parse_dayofweek)
+        upper.chars().filter_map(parse_dayofweek).map(|d| {
+            match day_shift {
+                DayShift::Forward => d.next(),
+                DayShift::Backward =>   d.previous(),
+                DayShift::None => d
+            }
+        })
     );
 
     if set.is_empty() {
@@ -92,7 +98,7 @@ fn parse_remind_at(token: &String) -> Result<(Time, DayShift), String> {
 }
 
 /// Time should be in UTC.
-fn parse_date(token: &String, time: &Time, day_shift: DayShift) -> Option<Date> {
+fn parse_date(token: &str, time: Time, day_shift: &DayShift) -> Option<Date> {
     let upper = token.to_uppercase();
     let (month, day) = if let Some(tup) = token.split('/')
     .map(|s| s.parse::<u8>().unwrap_or(u8::MAX))
@@ -112,7 +118,7 @@ fn parse_date(token: &String, time: &Time, day_shift: DayShift) -> Option<Date> 
             DayShift::Backward => d.previous_day().expect("the end of time"),
             DayShift::None => d,
         };
-        let date_time = date.with_time(*time).assume_offset(UtcOffset::UTC);
+        let date_time = date.with_time(time).assume_utc();
         if date_time <= now {
             // if the date is before rn, construct with next year
             date.replace_year(curr_year + 1).unwrap()
@@ -122,7 +128,7 @@ fn parse_date(token: &String, time: &Time, day_shift: DayShift) -> Option<Date> 
     }).ok()
 }
 
-fn parse_repeat_weekly(token: &String) -> bool {
+fn parse_repeat_weekly(token: &str) -> bool {
     token.to_lowercase().contains("rep")
 }
 
@@ -135,7 +141,7 @@ pub struct TaskTimeInfo {
 
 impl TaskTimeInfo {
     pub fn parse(str: &str) -> Result<Self, String> {
-        let tokens: Vec<String> = str.split(" ").map(String::from).collect();
+        let tokens: Vec<String> = str.split(' ').map(String::from).collect();
 
         if tokens.len() < 2 {
             return Err("are you stupid you must be stupid".into());
@@ -146,8 +152,8 @@ impl TaskTimeInfo {
         Ok(
             Self {
                 // parse same token for date and days of week.
-                days_of_week: parse_on_days(&tokens[1]), 
-                date: parse_date(&tokens[1], &remind_time, day_shift),
+                days_of_week: parse_on_days(&tokens[1],&day_shift), 
+                date: parse_date(&tokens[1], remind_time, &day_shift),
                 repeat_weekly: parse_repeat_weekly(&tokens.get(2).unwrap_or(&String::new())),
                 remind_time 
             }

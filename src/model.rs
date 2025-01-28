@@ -182,7 +182,7 @@ impl Task {
                 let local_offset = UtcOffset::from_whole_seconds(offset_sec)
                     .expect("??");
     			Some(date.with_time(*remind_at)
-                    .assume_offset(UtcOffset::UTC).to_offset(local_offset))
+                    .assume_utc().to_offset(local_offset))
     		},
     		Self::Recurring { .. } => None
     	}
@@ -192,7 +192,7 @@ impl Task {
     pub fn datetime_utc(&self) -> Option<OffsetDateTime> {
     	match self {
     		Self::Once { date, remind_at, .. } => {
-    			Some(date.with_time(*remind_at).assume_offset(UtcOffset::UTC))
+    			Some(date.with_time(*remind_at).assume_utc())
     		},
     		Self::Recurring { .. } => None
     	}
