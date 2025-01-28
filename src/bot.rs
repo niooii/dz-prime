@@ -165,17 +165,17 @@ fn reply_string(task: &Task) -> String {
                     "**{days:?}**\nrepeating weekly: **{}**\nnext reminder on **{}**\nor **{}** in UTC", 
                     task.repeats_weekly(),
                     dt_local
-                        .format(format_description!("`[year]/[month]/[day]` at `[hour]:[minute] [period]`")).unwrap(), 
+                        .format(format_description!("`[year]/[month]/[day]` at `[hour repr:12]:[minute] [period]`")).unwrap(), 
                     dt_utc
-                        .format(format_description!("`[year]/[month]/[day]` at `[hour]:[minute] [period]`")).unwrap(), 
+                        .format(format_description!("`[year]/[month]/[day]` at `[hour repr:12]:[minute] [period]`")).unwrap(), 
                 )
             } else {
                 format!(
                     "**{}** in local time\nor **{}** in UTC", 
                     dt_local
-                        .format(format_description!("`[year]/[month]/[day]` at `[hour]:[minute] [period]`")).unwrap(), 
+                        .format(format_description!("`[year]/[month]/[day]` at `[hour repr:12]:[minute] [period]`")).unwrap(), 
                     dt_utc
-                        .format(format_description!("`[year]/[month]/[day]` at `[hour]:[minute] [period]`")).unwrap(), 
+                        .format(format_description!("`[year]/[month]/[day]` at `[hour repr:12]:[minute] [period]`")).unwrap(), 
                 )
             },
         )
